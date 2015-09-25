@@ -87,19 +87,23 @@ func (g *desiredLRPGenerator) Generate(count int) error {
 	}()
 
 	var result error
-outer:
+OUTER_LOOP:
 	for {
 		select {
 		case err = <-errCh:
 			result = err
 			if err != nil {
 				g.logger.Error("failed-seeding-desired-lrps", err)
-				break outer
+				break OUTER_LOOP
 			}
 		case <-doneCh:
-			break outer
+			break OUTER_LOOP
 		default:
 		}
+	}
+
+	if result == nil {
+		g.logger.Info("succeeded", lager.Data{"count": count})
 	}
 
 	return result
