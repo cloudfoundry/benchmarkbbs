@@ -1,7 +1,6 @@
 package generator_test
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
@@ -25,15 +24,9 @@ var _ = Describe("DesiredLrpGenerator", func() {
 			Expect(response.Node.Nodes).To(HaveLen(3))
 
 			for _, node := range response.Node.Nodes {
-				matched, err := regexp.MatchString(".*template-guid.*", node.Key)
+				guid := strings.TrimPrefix(node.Key, "/v1/desired_lrp/schedule/")
+				_, err := bbsClient.DesiredLRPByProcessGuid(guid)
 				Expect(err).ToNot(HaveOccurred())
-
-				if !matched {
-					guid := strings.TrimPrefix(node.Key, "/v1/desired_lrp/schedule/")
-					_, err := bbsClient.DesiredLRPByProcessGuid(guid)
-					Expect(err).ToNot(HaveOccurred())
-					break
-				}
 			}
 		})
 	})
