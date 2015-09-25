@@ -25,7 +25,6 @@ import (
 
 var bbsAddress string
 var consulAddress string
-var bbsCACert string
 var bbsClientCert string
 var bbsClientKey string
 var etcdFlags *ETCDFlags
@@ -38,7 +37,6 @@ var logger lager.Logger
 
 func init() {
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
-	flag.StringVar(&bbsCACert, "bbs-ca-cert", "", "bbs ca cert")
 	flag.StringVar(&bbsClientCert, "bbs-client-cert", "", "bbs client ssl certificate")
 	flag.StringVar(&bbsClientKey, "bbs-client-key", "", "bbs client ssl key")
 	flag.StringVar(&consulAddress, "consul-address", "http://127.0.0.1:8500", "http address for the consul agent (required)")
@@ -232,7 +230,7 @@ func initializeBBSClient(logger lager.Logger) bbs.Client {
 		return bbs.NewClient(bbsAddress)
 	}
 
-	bbsClient, err := bbs.NewSecureClient(bbsAddress, bbsCACert, bbsClientCert, bbsClientKey, 1, 1)
+	bbsClient, err := bbs.NewSecureSkipVerifyClient(bbsAddress, bbsClientCert, bbsClientKey, 1, 1)
 	if err != nil {
 		logger.Fatal("Failed to configure secure BBS client", err)
 	}
