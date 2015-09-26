@@ -36,8 +36,8 @@ var logger lager.Logger
 
 func init() {
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
-	flag.StringVar(&bbsClientCert, "bbs-client-cert", "", "bbs client ssl certificate")
-	flag.StringVar(&bbsClientKey, "bbs-client-key", "", "bbs client ssl key")
+	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "bbs client ssl certificate")
+	flag.StringVar(&bbsClientKey, "bbsClientKey", "", "bbs client ssl key")
 
 	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of DesiredLRPs to create")
 	flag.IntVar(&desiredLRPFetchCount, "desiredLRPFetchCount", 5, "number of iterations to fetch all DesiredLRPs")
