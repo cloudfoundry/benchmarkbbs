@@ -24,7 +24,6 @@ import (
 )
 
 var bbsAddress string
-var consulAddress string
 var bbsClientCert string
 var bbsClientKey string
 var etcdFlags *ETCDFlags
@@ -39,7 +38,6 @@ func init() {
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
 	flag.StringVar(&bbsClientCert, "bbs-client-cert", "", "bbs client ssl certificate")
 	flag.StringVar(&bbsClientKey, "bbs-client-key", "", "bbs client ssl key")
-	flag.StringVar(&consulAddress, "consul-address", "http://127.0.0.1:8500", "http address for the consul agent (required)")
 
 	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of DesiredLRPs to create")
 	flag.IntVar(&desiredLRPFetchCount, "desiredLRPFetchCount", 5, "number of iterations to fetch all DesiredLRPs")
@@ -51,10 +49,6 @@ func init() {
 
 	if bbsAddress == "" {
 		log.Fatal("bbsAddress is required")
-	}
-
-	if consulAddress == "" {
-		log.Fatal("i need a consul address to talk to Diego...")
 	}
 }
 
