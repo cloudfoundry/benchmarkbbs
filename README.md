@@ -1,10 +1,10 @@
 # Diego BBS Benchmark Suite
 
-## Usage:
+## Usage
 
 To run the suite against [BOSH Lite](https://github.com/cloudfoundry/bosh-lite):
 
-First, download the bbs-certs from diego-release: https://github.com/cloudfoundry-incubator/diego-release/tree/develop/manifest-generation/bosh-lite-stubs/bbs-certs
+First, download the client SSL certs and keys from diego-release:
 
 ```
 cp ~/workspace/diego-release/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt bbs-client.crt
