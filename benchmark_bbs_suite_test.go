@@ -67,7 +67,8 @@ var _ = BeforeSuite(func() {
 
 	cleanUpDesiredLRPs()
 
-	Expect(bbsClient.Ping()).To(Equal(true))
+	_, err = bbsClient.Domains()
+	Expect(err).NotTo(HaveOccurred())
 
 	if desiredLRPs > 0 {
 		desiredLRPGenerator := generator.NewDesiredLRPGenerator(logger, bbsClient, *etcdClient)
