@@ -19,7 +19,7 @@ Then run ginkgo:
 ```
 ginkgo -- -desiredLRPs=5000 \
           -bbsAddress=https://10.244.16.130:8889 \
-          -etcdCluster=https://etcd.service.cf.internal:4001 \
+          -etcdCluster=https://10.244.16.130:4001 \
           -etcdCertFile=etcd-client.crt \
           -etcdKeyFile=etcd-client.key \
           -etcdCaFile=etcd-ca.crt \
