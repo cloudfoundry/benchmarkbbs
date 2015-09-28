@@ -27,8 +27,8 @@ var bbsAddress string
 var bbsClientCert string
 var bbsClientKey string
 var etcdFlags *ETCDFlags
-var desiredLRPFetchCount int
 var desiredLRPs int
+var actualLRPs int
 
 var etcdClient *etcd.Client
 var bbsClient bbs.Client
@@ -40,7 +40,7 @@ func init() {
 	flag.StringVar(&bbsClientKey, "bbsClientKey", "", "bbs client ssl key")
 
 	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of DesiredLRPs to create")
-	flag.IntVar(&desiredLRPFetchCount, "desiredLRPFetchCount", 5, "number of iterations to fetch all DesiredLRPs")
+	flag.IntVar(&actualLRPs, "actualLRPs", 0, "number of ActualLRPs to create")
 
 	cf_lager.AddFlags(flag.CommandLine)
 	etcdFlags = AddETCDFlags(flag.CommandLine)
@@ -66,6 +66,7 @@ var _ = BeforeSuite(func() {
 	bbsClient = initializeBBSClient(logger)
 
 	cleanUpDesiredLRPs()
+	cleanUpActualLRPs()
 
 	_, err = bbsClient.Domains()
 	Expect(err).NotTo(HaveOccurred())
@@ -75,10 +76,17 @@ var _ = BeforeSuite(func() {
 		err := desiredLRPGenerator.Generate(desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
 	}
+
+	if actualLRPs > 0 {
+		actualLRPGenerator := generator.NewActualLRPGenerator(logger, bbsClient, *etcdClient)
+		err := actualLRPGenerator.Generate(actualLRPs)
+		Expect(err).NotTo(HaveOccurred())
+	}
 })
 
 var _ = AfterSuite(func() {
 	cleanUpDesiredLRPs()
+	cleanUpActualLRPs()
 })
 
 type ETCDFlags struct {
@@ -233,5 +241,10 @@ func initializeBBSClient(logger lager.Logger) bbs.Client {
 
 func cleanUpDesiredLRPs() {
 	_, err := etcdClient.Delete("/v1/desired_lrp/", true)
+	Expect(err).ToNot(HaveOccurred())
+}
+
+func cleanUpActualLRPs() {
+	_, err := etcdClient.Delete("/v1/actual/", true)
 	Expect(err).ToNot(HaveOccurred())
 }
