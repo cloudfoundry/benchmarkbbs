@@ -206,7 +206,6 @@ func initializeEtcdClient(logger lager.Logger, etcdOptions *etcddb.ETCDOptions) 
 			MaxIdleConnsPerHost: etcdOptions.MaxIdleConnsPerHost,
 		}
 		etcdClient.SetTransport(tr)
-		etcdClient.AddRootCA(etcdOptions.CAFile)
 	} else {
 		etcdClient = etcd.NewClient(etcdOptions.ClusterUrls)
 	}
@@ -233,5 +232,6 @@ func initializeBBSClient(logger lager.Logger) bbs.Client {
 }
 
 func cleanUpDesiredLRPs() {
-	etcdClient.Delete("/v1/desired_lrp/", true)
+	_, err := etcdClient.Delete("/v1/desired_lrp/", true)
+	Expect(err).ToNot(HaveOccurred())
 }

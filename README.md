@@ -11,7 +11,6 @@ cp ~/workspace/diego-release/manifest-generation/bosh-lite-stubs/bbs-certs/clien
 cp ~/workspace/diego-release/manifest-generation/bosh-lite-stubs/bbs-certs/client.key bbs-client.key
 cp ~/workspace/diego-release/manifest-generation/bosh-lite-stubs/etcd-certs/client.crt etcd-client.crt
 cp ~/workspace/diego-release/manifest-generation/bosh-lite-stubs/etcd-certs/client.key etcd-client.key
-cp ~/workspace/diego-release/manifest-generation/bosh-lite-stubs/etcd-certs/ca.crt etcd-ca.crt
 ```
 
 Then run ginkgo:
@@ -22,7 +21,6 @@ ginkgo -- -desiredLRPs=5000 \
           -etcdCluster=https://10.244.16.130:4001 \
           -etcdCertFile=etcd-client.crt \
           -etcdKeyFile=etcd-client.key \
-          -etcdCaFile=etcd-ca.crt \
           -bbsClientKey=bbs-client.key \
           -bbsClientCert=bbs-client.crt
 ```
