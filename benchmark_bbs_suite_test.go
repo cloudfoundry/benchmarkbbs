@@ -12,6 +12,7 @@ import (
 
 	"github.com/cloudfoundry-incubator/bbs"
 	etcddb "github.com/cloudfoundry-incubator/bbs/db/etcd"
+	"github.com/cloudfoundry-incubator/bbs/encryption"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
 	"github.com/cloudfoundry-incubator/cf-lager"
 	"github.com/coreos/go-etcd/etcd"
@@ -29,6 +30,7 @@ var bbsClientKey string
 var etcdFlags *ETCDFlags
 var desiredLRPs int
 var actualLRPs int
+var encryptionFlags *encryption.EncryptionFlags
 
 var etcdClient *etcd.Client
 var bbsClient bbs.Client
@@ -44,6 +46,7 @@ func init() {
 
 	cf_lager.AddFlags(flag.CommandLine)
 	etcdFlags = AddETCDFlags(flag.CommandLine)
+	encryptionFlags = encryption.AddEncryptionFlags(flag.CommandLine)
 
 	flag.Parse()
 
