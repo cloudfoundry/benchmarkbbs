@@ -17,10 +17,13 @@ Then run ginkgo:
 
 ```
 ginkgo -- -desiredLRPs=5000 \
+          -actualLRPs=5000 \
           -bbsAddress=https://10.244.16.130:8889 \
           -etcdCluster=https://10.244.16.130:4001 \
           -etcdCertFile=etcd-client.crt \
           -etcdKeyFile=etcd-client.key \
           -bbsClientKey=bbs-client.key \
-          -bbsClientCert=bbs-client.crt
+          -bbsClientCert=bbs-client.crt \
+          -encryptionKey="key1:a secure passphrase" \
+          -activeKeyLabel=key1
 ```

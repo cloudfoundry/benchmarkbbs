@@ -7,14 +7,16 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Fetching", func() {
+var _ = Describe("Fetching for Route Emitter", func() {
 	Measure("data for route emitter", func(b Benchmarker) {
-		b.Time("fetch all desiredLRP scheduling and actualLRP info", func() {
 
+		b.Time("fetch all actualLRPs", func() {
 			_, err := bbsClient.ActualLRPGroups(models.ActualLRPFilter{})
 			Expect(err).NotTo(HaveOccurred())
+		})
 
-			_, err = bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
+		b.Time("fetch all desiredLRP scheduling info", func() {
+			_, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
 			Expect(err).NotTo(HaveOccurred())
 		})
 

@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Fetching", func() {
+var _ = Describe("Fetching for nsync bulker", func() {
 	Measure("DesiredLRPs", func(b Benchmarker) {
 		b.Time("fetch all desired LRP scheduling info", func() {
 			_, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})

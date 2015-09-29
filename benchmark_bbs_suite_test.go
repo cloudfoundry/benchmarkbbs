@@ -47,12 +47,6 @@ func init() {
 	cf_lager.AddFlags(flag.CommandLine)
 	etcdFlags = AddETCDFlags(flag.CommandLine)
 	encryptionFlags = encryption.AddEncryptionFlags(flag.CommandLine)
-
-	flag.Parse()
-
-	if bbsAddress == "" {
-		log.Fatal("bbsAddress is required")
-	}
 }
 
 func TestBenchmarkBbs(t *testing.T) {
@@ -64,7 +58,9 @@ var _ = BeforeSuite(func() {
 	etcdOptions, err := etcdFlags.Validate()
 	Expect(err).NotTo(HaveOccurred())
 
-	logger, _ = cf_lager.New("benchmark-bbs")
+	logger = lager.NewLogger("test")
+	logger.RegisterSink(lager.NewWriterSink(GinkgoWriter, lager.DEBUG))
+
 	etcdClient = initializeEtcdClient(logger, etcdOptions)
 	bbsClient = initializeBBSClient(logger)
 
@@ -226,6 +222,10 @@ func initializeEtcdClient(logger lager.Logger, etcdOptions *etcddb.ETCDOptions) 
 }
 
 func initializeBBSClient(logger lager.Logger) bbs.Client {
+	if bbsAddress == "" {
+		log.Fatal("bbsAddress is required")
+	}
+
 	bbsURL, err := url.Parse(bbsAddress)
 	if err != nil {
 		logger.Fatal("Invalid BBS URL", err)

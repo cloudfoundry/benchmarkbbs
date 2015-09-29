@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = FDescribe("Gathering", func() {
+var _ = Describe("Gathering", func() {
 	var etcdDB *etcddb.ETCDDB
 	BeforeEach(func() {
 		keyManager, err := encryptionFlags.Validate()
