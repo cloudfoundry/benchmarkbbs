@@ -27,7 +27,7 @@ func NewDataDogReporter(
 	dataDogClient *datadog.Client,
 ) DataDogReporter {
 	return DataDogReporter{
-		logger:        logger,
+		logger:        logger.Session("datadog-reporter"),
 		metricPrefix:  metricPrefix,
 		dataDogClient: dataDogClient,
 	}
