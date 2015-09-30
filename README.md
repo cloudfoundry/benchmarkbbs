@@ -28,10 +28,19 @@ ginkgo -- -desiredLRPs=5000 \
           -activeKeyLabel=key1
 ```
 
-If you'd like to have metrics emitted, add the following flags:
+If you'd like to have metrics emitted to DataDog, add the following flags:
 
 ```
 -dataDogAPIKey=$DATADOG_API_KEY \
 -dataDogAppKey=$DATADOG_APP_KEY \
 -metricPrefix=$METRIC_PREFIX
+```
+
+If you'd like to have metrics saved to an S3 bucket, add the following flags:
+
+```
+-awsAccessKeyID=$AWS_ACCESS_KEY_ID \
+-awsSecretAccessKey=$AWS_SECRET_ACCESS_KEY \
+-awsBucketName=$AWS_BUCKET_NAME \
+-awsRegion=$AWS_REGION # defaults to us-west-1
 ```

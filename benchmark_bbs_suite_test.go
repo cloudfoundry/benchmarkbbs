@@ -12,6 +12,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/cloudfoundry-incubator/bbs"
 	etcddb "github.com/cloudfoundry-incubator/bbs/db/etcd"
 	"github.com/cloudfoundry-incubator/bbs/encryption"
@@ -35,6 +39,10 @@ var bbsClientKey string
 var etcdFlags *ETCDFlags
 var dataDogAPIKey string
 var dataDogAppKey string
+var awsAccessKeyID string
+var awsSecretAccessKey string
+var awsBucketName string
+var awsRegion string
 var desiredLRPs int
 var actualLRPs int
 var encryptionFlags *encryption.EncryptionFlags
@@ -53,6 +61,10 @@ func init() {
 	flag.StringVar(&bbsClientKey, "bbsClientKey", "", "BBS client SSL key")
 	flag.StringVar(&dataDogAPIKey, "dataDogAPIKey", "", "DataDog API key")
 	flag.StringVar(&dataDogAppKey, "dataDogAppKey", "", "DataDog app Key")
+	flag.StringVar(&awsAccessKeyID, "awsAccessKeyID", "", "AWS Access Key ID")
+	flag.StringVar(&awsSecretAccessKey, "awsSecretAccessKey", "", "AWS Secret Access Key")
+	flag.StringVar(&awsBucketName, "awsBucketName", "", "AWS Bucket to store metrics")
+	flag.StringVar(&awsRegion, "awsRegion", "us-west-1", "AWS Bucket to store metrics")
 	flag.StringVar(&metricPrefix, "metricPrefix", "", "DataDog metric prefix")
 
 	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of DesiredLRPs to create")
@@ -79,6 +91,17 @@ func TestBenchmarkBbs(t *testing.T) {
 		dataDogClient := datadog.NewClient(dataDogAPIKey, dataDogAppKey)
 		dataDogReporter = reporter.NewDataDogReporter(logger, metricPrefix, dataDogClient)
 		reporters = append(reporters, &dataDogReporter)
+	}
+
+	if awsAccessKeyID != "" && awsSecretAccessKey != "" && awsBucketName != "" {
+		creds := credentials.NewStaticCredentials(awsAccessKeyID, awsSecretAccessKey, "")
+		s3Client := s3.New(&aws.Config{
+			Region:      &awsRegion,
+			Credentials: creds,
+		})
+		uploader := s3manager.NewUploader(&s3manager.UploadOptions{S3: s3Client})
+		reporter := reporter.NewS3Reporter(logger, awsBucketName, uploader)
+		reporters = append(reporters, &reporter)
 	}
 
 	RegisterFailHandler(Fail)
