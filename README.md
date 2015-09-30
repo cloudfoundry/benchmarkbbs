@@ -27,3 +27,11 @@ ginkgo -- -desiredLRPs=5000 \
           -encryptionKey="key1:a secure passphrase" \
           -activeKeyLabel=key1
 ```
+
+If you'd like to have metrics emitted, add the following flags:
+
+```
+-dataDogAPIKey=$DATADOG_API_KEY \
+-dataDogAppKey=$DATADOG_APP_KEY \
+-metricPrefix=$METRIC_PREFIX
+```

@@ -16,10 +16,12 @@ import (
 	etcddb "github.com/cloudfoundry-incubator/bbs/db/etcd"
 	"github.com/cloudfoundry-incubator/bbs/encryption"
 	"github.com/cloudfoundry-incubator/bbs/format"
+	"github.com/cloudfoundry-incubator/benchmark-bbs/datadog_reporter"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
 	"github.com/cloudfoundry-incubator/cf-lager"
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/pivotal-golang/lager"
+	"github.com/zorkian/go-datadog-api"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -31,19 +33,27 @@ var bbsAddress string
 var bbsClientCert string
 var bbsClientKey string
 var etcdFlags *ETCDFlags
+var dataDogAPIKey string
+var dataDogAppKey string
 var desiredLRPs int
 var actualLRPs int
 var encryptionFlags *encryption.EncryptionFlags
+var metricPrefix string
 
+var logger lager.Logger
 var etcdClient *etcd.Client
 var etcdDB *etcddb.ETCDDB
 var bbsClient bbs.Client
-var logger lager.Logger
+var dataDogReporter datadog_reporter.DataDogReporter
+var reporters []Reporter
 
 func init() {
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
-	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "bbs client ssl certificate")
-	flag.StringVar(&bbsClientKey, "bbsClientKey", "", "bbs client ssl key")
+	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "BBS client SSL certificate")
+	flag.StringVar(&bbsClientKey, "bbsClientKey", "", "BBS client SSL key")
+	flag.StringVar(&dataDogAPIKey, "dataDogAPIKey", "", "DataDog API key")
+	flag.StringVar(&dataDogAppKey, "dataDogAppKey", "", "DataDog app Key")
+	flag.StringVar(&metricPrefix, "metricPrefix", "", "DataDog metric prefix")
 
 	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of DesiredLRPs to create")
 	flag.IntVar(&actualLRPs, "actualLRPs", 0, "number of ActualLRPs to create")
@@ -54,16 +64,24 @@ func init() {
 }
 
 func TestBenchmarkBbs(t *testing.T) {
+	logger = lager.NewLogger("test")
+	logger.RegisterSink(lager.NewWriterSink(GinkgoWriter, lager.DEBUG))
+
+	reporters = []Reporter{}
+
+	if dataDogAPIKey != "" && dataDogAppKey != "" {
+		dataDogClient := datadog.NewClient(dataDogAPIKey, dataDogAppKey)
+		dataDogReporter = datadog_reporter.NewDataDogReporter(logger, metricPrefix, dataDogClient)
+		reporters = append(reporters, &dataDogReporter)
+	}
+
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "BenchmarkBbs Suite")
+	RunSpecsWithDefaultAndCustomReporters(t, "Benchmark BBS Suite", reporters)
 }
 
 var _ = BeforeSuite(func() {
 	etcdOptions, err := etcdFlags.Validate()
 	Expect(err).NotTo(HaveOccurred())
-
-	logger = lager.NewLogger("test")
-	logger.RegisterSink(lager.NewWriterSink(GinkgoWriter, lager.DEBUG))
 
 	etcdClient = initializeEtcdClient(logger, etcdOptions)
 	bbsClient = initializeBBSClient(logger)
