@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -23,6 +24,7 @@ import (
 	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 	"github.com/cloudfoundry-incubator/cf-lager"
+	"github.com/cloudfoundry-incubator/cf_http"
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/pivotal-golang/lager"
 	"github.com/zorkian/go-datadog-api"
@@ -52,6 +54,7 @@ var logger lager.Logger
 var etcdClient *etcd.Client
 var etcdDB *etcddb.ETCDDB
 var bbsClient bbs.Client
+var bbsClientHTTPTimeout time.Duration
 var dataDogReporter reporter.DataDogReporter
 var reporters []Reporter
 
@@ -59,6 +62,7 @@ func init() {
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
 	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "BBS client SSL certificate")
 	flag.StringVar(&bbsClientKey, "bbsClientKey", "", "BBS client SSL key")
+	flag.DurationVar(&bbsClientHTTPTimeout, "bbsClientHTTPTimeout", 0, "BBS client HTTP timeout")
 	flag.StringVar(&dataDogAPIKey, "dataDogAPIKey", "", "DataDog API key")
 	flag.StringVar(&dataDogAppKey, "dataDogAppKey", "", "DataDog app Key")
 	flag.StringVar(&awsAccessKeyID, "awsAccessKeyID", "", "AWS Access Key ID")
@@ -113,7 +117,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	etcdClient = initializeEtcdClient(logger, etcdOptions)
-	bbsClient = initializeBBSClient(logger)
+	bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
 	etcdDB = initializeETCDDB(logger, etcdClient)
 
 	purge("/v1/desired_lrp")
@@ -281,7 +285,7 @@ func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCD
 	return etcddb.NewETCD(format.ENCRYPTED_PROTO, cryptor, etcddb.NewStoreClient(etcdClient), nil, nil, nil, nil, nil)
 }
 
-func initializeBBSClient(logger lager.Logger) bbs.Client {
+func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.Client {
 	bbsURL, err := url.Parse(bbsAddress)
 	if err != nil {
 		logger.Fatal("Invalid BBS URL", err)
@@ -291,6 +295,7 @@ func initializeBBSClient(logger lager.Logger) bbs.Client {
 		return bbs.NewClient(bbsAddress)
 	}
 
+	cf_http.Initialize(bbsClientHTTPTimeout)
 	bbsClient, err := bbs.NewSecureSkipVerifyClient(bbsAddress, bbsClientCert, bbsClientKey, 1, 1)
 	if err != nil {
 		logger.Fatal("Failed to configure secure BBS client", err)
