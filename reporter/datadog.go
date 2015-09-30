@@ -44,6 +44,10 @@ func (r *DataDogReporter) SpecWillRun(specSummary *types.SpecSummary) {
 func (r *DataDogReporter) SpecDidComplete(specSummary *types.SpecSummary) {
 	if specSummary.Passed() && specSummary.IsMeasurement {
 		for _, measurement := range specSummary.Measurements {
+			if measurement.Info == nil {
+				panic(fmt.Sprintf("%#v", specSummary))
+			}
+
 			info, ok := measurement.Info.(ReporterInfo)
 			if !ok {
 				r.logger.Error("failed-type-assertion-on-measurement-info", errors.New("type-assertion-failed"))
