@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/cloudfoundry-incubator/bbs"
@@ -64,8 +65,8 @@ var _ = BeforeSuite(func() {
 	etcdClient = initializeEtcdClient(logger, etcdOptions)
 	bbsClient = initializeBBSClient(logger)
 
-	cleanUpDesiredLRPs()
-	cleanUpActualLRPs()
+	purge("/v1/desired_lrp")
+	purge("/v1/actual")
 
 	_, err = bbsClient.Domains()
 	Expect(err).NotTo(HaveOccurred())
@@ -84,8 +85,8 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	cleanUpDesiredLRPs()
-	cleanUpActualLRPs()
+	purge("/v1/desired_lrp")
+	purge("/v1/actual")
 })
 
 type ETCDFlags struct {
@@ -242,12 +243,15 @@ func initializeBBSClient(logger lager.Logger) bbs.Client {
 	return bbsClient
 }
 
-func cleanUpDesiredLRPs() {
-	_, err := etcdClient.Delete("/v1/desired_lrp/", true)
-	Expect(err).ToNot(HaveOccurred())
-}
-
-func cleanUpActualLRPs() {
-	_, err := etcdClient.Delete("/v1/actual/", true)
-	Expect(err).ToNot(HaveOccurred())
+func purge(key string) {
+	_, err := etcdClient.Delete(key, true)
+	if err != nil {
+		matches, matchErr := regexp.Match(".*Key not found.*", []byte(err.Error()))
+		if matchErr != nil {
+			Fail(matchErr.Error())
+		}
+		if !matches {
+			Fail(err.Error())
+		}
+	}
 }
