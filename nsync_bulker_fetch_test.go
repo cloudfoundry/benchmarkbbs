@@ -17,7 +17,7 @@ var _ = Describe("Fetching for nsync bulker", func() {
 		b.Time("fetch all desired LRP scheduling info", func() {
 			_, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
 			Expect(err).NotTo(HaveOccurred())
-		}, reporter.DataDogReporterInfo{
+		}, reporter.ReporterInfo{
 			MetricName: FetchAllSchedulingInfos,
 		})
 	}, 10)

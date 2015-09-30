@@ -11,10 +11,6 @@ import (
 	"github.com/zorkian/go-datadog-api"
 )
 
-type DataDogReporterInfo struct {
-	MetricName string
-}
-
 type DataDogReporter struct {
 	logger        lager.Logger
 	metricPrefix  string
@@ -48,7 +44,7 @@ func (r *DataDogReporter) SpecWillRun(specSummary *types.SpecSummary) {
 func (r *DataDogReporter) SpecDidComplete(specSummary *types.SpecSummary) {
 	if specSummary.Passed() && specSummary.IsMeasurement {
 		for _, measurement := range specSummary.Measurements {
-			info, ok := measurement.Info.(DataDogReporterInfo)
+			info, ok := measurement.Info.(ReporterInfo)
 			if !ok {
 				r.logger.Error("failed-type-assertion-on-measurement-info", errors.New("type-assertion-failed"))
 				continue

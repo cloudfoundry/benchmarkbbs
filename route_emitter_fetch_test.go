@@ -22,7 +22,7 @@ var _ = Describe("Fetching for Route Emitter", func() {
 		b.Time("fetch all desiredLRP scheduling info", func() {
 			_, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
 			Expect(err).NotTo(HaveOccurred())
-		}, reporter.DataDogReporterInfo{
+		}, reporter.ReporterInfo{
 			MetricName: FetchActualLRPsAndSchedulingInfos,
 		})
 	}, 10)
