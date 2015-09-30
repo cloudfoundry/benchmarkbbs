@@ -1,4 +1,4 @@
-package datadog_reporter
+package reporter
 
 import (
 	"errors"

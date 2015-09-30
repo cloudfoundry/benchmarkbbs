@@ -16,8 +16,8 @@ import (
 	etcddb "github.com/cloudfoundry-incubator/bbs/db/etcd"
 	"github.com/cloudfoundry-incubator/bbs/encryption"
 	"github.com/cloudfoundry-incubator/bbs/format"
-	"github.com/cloudfoundry-incubator/benchmark-bbs/datadog_reporter"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
+	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 	"github.com/cloudfoundry-incubator/cf-lager"
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/pivotal-golang/lager"
@@ -44,7 +44,7 @@ var logger lager.Logger
 var etcdClient *etcd.Client
 var etcdDB *etcddb.ETCDDB
 var bbsClient bbs.Client
-var dataDogReporter datadog_reporter.DataDogReporter
+var dataDogReporter reporter.DataDogReporter
 var reporters []Reporter
 
 func init() {
@@ -71,7 +71,7 @@ func TestBenchmarkBbs(t *testing.T) {
 
 	if dataDogAPIKey != "" && dataDogAppKey != "" {
 		dataDogClient := datadog.NewClient(dataDogAPIKey, dataDogAppKey)
-		dataDogReporter = datadog_reporter.NewDataDogReporter(logger, metricPrefix, dataDogClient)
+		dataDogReporter = reporter.NewDataDogReporter(logger, metricPrefix, dataDogClient)
 		reporters = append(reporters, &dataDogReporter)
 	}
 
