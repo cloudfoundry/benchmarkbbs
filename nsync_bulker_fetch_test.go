@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	FetchAllSchedulingInfos = "FetchAllSchedulingInfos"
+	NsyncBulkerFetching = "NsyncBulkerFetching"
 )
 
 var _ = Describe("Fetching for nsync bulker", func() {
@@ -18,7 +18,7 @@ var _ = Describe("Fetching for nsync bulker", func() {
 			_, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
 			Expect(err).NotTo(HaveOccurred())
 		}, reporter.ReporterInfo{
-			MetricName: FetchAllSchedulingInfos,
+			MetricName: NsyncBulkerFetching,
 		})
 	}, 10)
 })
