@@ -1,6 +1,7 @@
 package benchmark_bbs_test
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -14,6 +15,7 @@ import (
 	"github.com/cloudfoundry-incubator/bbs"
 	etcddb "github.com/cloudfoundry-incubator/bbs/db/etcd"
 	"github.com/cloudfoundry-incubator/bbs/encryption"
+	"github.com/cloudfoundry-incubator/bbs/format"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
 	"github.com/cloudfoundry-incubator/cf-lager"
 	"github.com/coreos/go-etcd/etcd"
@@ -34,6 +36,7 @@ var actualLRPs int
 var encryptionFlags *encryption.EncryptionFlags
 
 var etcdClient *etcd.Client
+var etcdDB *etcddb.ETCDDB
 var bbsClient bbs.Client
 var logger lager.Logger
 
@@ -64,6 +67,7 @@ var _ = BeforeSuite(func() {
 
 	etcdClient = initializeEtcdClient(logger, etcdOptions)
 	bbsClient = initializeBBSClient(logger)
+	etcdDB = initializeETCDDB(logger, etcdClient)
 
 	purge("/v1/desired_lrp")
 	purge("/v1/actual")
@@ -220,6 +224,14 @@ func initializeEtcdClient(logger lager.Logger, etcdOptions *etcddb.ETCDOptions) 
 	etcdClient.SetConsistency(etcd.STRONG_CONSISTENCY)
 
 	return etcdClient
+}
+
+func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCDDB {
+	keyManager, err := encryptionFlags.Validate()
+	Expect(err).NotTo(HaveOccurred())
+	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
+
+	return etcddb.NewETCD(format.ENCRYPTED_PROTO, cryptor, etcddb.NewStoreClient(etcdClient), nil, nil, nil, nil, nil)
 }
 
 func initializeBBSClient(logger lager.Logger) bbs.Client {
