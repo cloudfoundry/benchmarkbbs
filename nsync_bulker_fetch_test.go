@@ -12,13 +12,16 @@ const (
 	NsyncBulkerFetching = "NsyncBulkerFetching"
 )
 
-var _ = Describe("Fetching for nsync bulker", func() {
-	Measure("DesiredLRPs", func(b Benchmarker) {
-		b.Time("fetch all desired LRP scheduling info", func() {
-			_, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
-			Expect(err).NotTo(HaveOccurred())
-		}, reporter.ReporterInfo{
-			MetricName: NsyncBulkerFetching,
-		})
-	}, 10)
-})
+var BenchmarkNsyncFetching = func(numTrials int) {
+	Describe("Fetching for nsync bulker", func() {
+		Measure("DesiredLRPs", func(b Benchmarker) {
+			b.Time("fetch all desired LRP scheduling info", func() {
+				desireds, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(desireds).To(HaveLen(expectedLRPCount))
+			}, reporter.ReporterInfo{
+				MetricName: NsyncBulkerFetching,
+			})
+		}, numTrials)
+	})
+}

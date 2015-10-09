@@ -7,7 +7,8 @@ Run ginkgo:
 ```
 ginkgo -- \
   -desiredLRPs=5000 \
-  -actualLRPs=5000 \
+  -numTrials=10 \
+  -numPopulateWorkers=10 \
   -bbsAddress=https://10.244.16.130:8889 \
   -bbsClientHTTPTimeout=10s \
   -etcdCluster=https://10.244.16.130:4001 \

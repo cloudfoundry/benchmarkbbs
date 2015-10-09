@@ -9,7 +9,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -46,9 +48,11 @@ var awsSecretAccessKey string
 var awsBucketName string
 var awsRegion string
 var desiredLRPs int
-var actualLRPs int
 var encryptionFlags *encryption.EncryptionFlags
 var metricPrefix string
+var numTrials int
+var numPopulateWorkers int
+var expectedLRPCount int
 
 var logger lager.Logger
 var etcdClient *etcd.Client
@@ -59,20 +63,24 @@ var dataDogReporter reporter.DataDogReporter
 var reporters []Reporter
 
 func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	flag.IntVar(&numTrials, "numTrials", 10, "number of benchmark trials to average across")
+	flag.IntVar(&numPopulateWorkers, "numPopulateWorkers", 10, "number of workers generating desired LRPs during setup")
+	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of single instance DesiredLRPs to create")
+
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
 	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "BBS client SSL certificate")
 	flag.StringVar(&bbsClientKey, "bbsClientKey", "", "BBS client SSL key")
 	flag.DurationVar(&bbsClientHTTPTimeout, "bbsClientHTTPTimeout", 0, "BBS client HTTP timeout")
+
 	flag.StringVar(&dataDogAPIKey, "dataDogAPIKey", "", "DataDog API key")
 	flag.StringVar(&dataDogAppKey, "dataDogAppKey", "", "DataDog app Key")
+	flag.StringVar(&metricPrefix, "metricPrefix", "", "DataDog metric prefix")
+
 	flag.StringVar(&awsAccessKeyID, "awsAccessKeyID", "", "AWS Access Key ID")
 	flag.StringVar(&awsSecretAccessKey, "awsSecretAccessKey", "", "AWS Secret Access Key")
 	flag.StringVar(&awsBucketName, "awsBucketName", "", "AWS Bucket to store metrics")
 	flag.StringVar(&awsRegion, "awsRegion", "us-west-1", "AWS Bucket to store metrics")
-	flag.StringVar(&metricPrefix, "metricPrefix", "", "DataDog metric prefix")
-
-	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of DesiredLRPs to create")
-	flag.IntVar(&actualLRPs, "actualLRPs", 0, "number of ActualLRPs to create")
 
 	cf_lager.AddFlags(flag.CommandLine)
 	etcdFlags = AddETCDFlags(flag.CommandLine)
@@ -83,11 +91,15 @@ func init() {
 	if bbsAddress == "" {
 		log.Fatal("bbsAddress is required")
 	}
+
+	BenchmarkConvergenceGathering(numTrials)
+	BenchmarkNsyncFetching(numTrials)
+	BenchmarkRouteEmitterFetching(numTrials)
 }
 
 func TestBenchmarkBbs(t *testing.T) {
 	logger = lager.NewLogger("test")
-	logger.RegisterSink(lager.NewWriterSink(GinkgoWriter, lager.DEBUG))
+	logger.RegisterSink(lager.NewWriterSink(os.Stdout, lager.DEBUG))
 
 	reporters = []Reporter{}
 
@@ -127,14 +139,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	if desiredLRPs > 0 {
-		desiredLRPGenerator := generator.NewDesiredLRPGenerator(logger, bbsClient, *etcdClient)
-		err := desiredLRPGenerator.Generate(desiredLRPs)
-		Expect(err).NotTo(HaveOccurred())
-	}
-
-	if actualLRPs > 0 {
-		actualLRPGenerator := generator.NewActualLRPGenerator(logger, bbsClient, *etcdClient)
-		err := actualLRPGenerator.Generate(actualLRPs)
+		desiredLRPGenerator := generator.NewDesiredLRPGenerator(numPopulateWorkers, bbsClient, *etcdClient)
+		expectedLRPCount, err = desiredLRPGenerator.Generate(logger, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
 	}
 })

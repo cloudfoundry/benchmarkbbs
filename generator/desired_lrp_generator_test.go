@@ -12,12 +12,13 @@ import (
 var _ = Describe("DesiredLrpGenerator", func() {
 	Describe("Generate", func() {
 		It("creates the desired number of desired lrps", func() {
-			desiredLRPGenerator := generator.NewDesiredLRPGenerator(logger, bbsClient, *etcdClient)
+			desiredLRPGenerator := generator.NewDesiredLRPGenerator(10, bbsClient, *etcdClient)
 			response, err := etcdClient.Get("/v1/desired_lrp/schedule", false, true)
 			Expect(err).To(HaveOccurred())
 
-			err = desiredLRPGenerator.Generate(3)
+			count, err := desiredLRPGenerator.Generate(logger, 3)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(count).To(Equal(3))
 
 			response, err = etcdClient.Get("/v1/desired_lrp/schedule", false, true)
 			Expect(err).ToNot(HaveOccurred())

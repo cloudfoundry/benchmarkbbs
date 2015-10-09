@@ -14,99 +14,66 @@ import (
 	"github.com/pivotal-golang/lager"
 )
 
-type desiredLRPGenerator struct {
-	logger     lager.Logger
+const ERROR_TOLERANCE = 0.05
+
+type DesiredLRPGenerator struct {
 	bbsClient  bbs.Client
 	etcdClient etcd.Client
 	workPool   *workpool.WorkPool
 }
 
 func NewDesiredLRPGenerator(
-	logger lager.Logger,
+	workpoolSize int,
 	bbsClient bbs.Client,
 	etcdClient etcd.Client,
-) Generator {
-	logger = logger.Session("desired-lrp-generator")
-	workPool, _ := workpool.NewWorkPool(10)
-
-	return &desiredLRPGenerator{
-		logger:     logger,
+) *DesiredLRPGenerator {
+	workPool, err := workpool.NewWorkPool(workpoolSize)
+	if err != nil {
+		panic(err)
+	}
+	return &DesiredLRPGenerator{
 		bbsClient:  bbsClient,
 		etcdClient: etcdClient,
-
-		workPool: workPool,
+		workPool:   workPool,
 	}
 }
 
-func (g *desiredLRPGenerator) Generate(count int) error {
-	g.logger.Info("generate", lager.Data{"count": count})
-
-	templateDesired, _ := newDesiredLRP("template-guid")
-	err := g.bbsClient.DesireLRP(templateDesired)
-	if err != nil {
-		g.logger.Error("failed-creating-template-desired-lrp", err)
-		return err
-	}
-
-	templateSchedulingInfo, err := g.etcdClient.Get("/v1/desired_lrp/schedule/template-guid", false, false)
-	if err != nil {
-		g.logger.Error("failed-getting-template-scheduling-info", err)
-		return err
-	}
-
-	templateRunInfo, err := g.etcdClient.Get("/v1/desired_lrp/run/template-guid", false, false)
-	if err != nil {
-		g.logger.Error("failed-getting-template-run-info", err)
-		return err
-	}
-
+func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, error) {
+	logger = logger.Session("generate-desired-lrp", lager.Data{"count": count})
+	start := time.Now()
 	var wg sync.WaitGroup
-	errCh := make(chan error, count*2)
-	for i := 0; i < count-1; i++ {
-		id, _ := uuid.NewV4()
+	errCh := make(chan error, count)
 
+	logger.Info("queing-started")
+	for i := 0; i < count; i++ {
 		wg.Add(1)
 		g.workPool.Submit(func() {
 			defer wg.Done()
-			_, err := g.etcdClient.Set(fmt.Sprintf("/v1/desired_lrp/schedule/%s", id), templateSchedulingInfo.Node.Value, 0)
-			errCh <- err
-		})
-
-		wg.Add(1)
-		g.workPool.Submit(func() {
-			defer wg.Done()
-			_, err = g.etcdClient.Set(fmt.Sprintf("/v1/desired_lrp/run/%s", id), templateRunInfo.Node.Value, 0)
-			errCh <- err
-		})
-	}
-
-	doneCh := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(doneCh)
-	}()
-
-	var result error
-OUTER_LOOP:
-	for {
-		select {
-		case err = <-errCh:
-			result = err
+			id, err := uuid.NewV4()
 			if err != nil {
-				g.logger.Error("failed-seeding-desired-lrps", err)
-				break OUTER_LOOP
+				panic(err)
 			}
-		case <-doneCh:
-			break OUTER_LOOP
-		default:
+			desired, err := newDesiredLRP(id.String())
+			if err != nil {
+				errCh <- err
+				return
+			}
+			errCh <- g.bbsClient.DesireLRP(desired)
+		})
+
+		if i%10000 == 0 {
+			logger.Info("queing-progress", lager.Data{"current": i, "total": count})
 		}
 	}
 
-	if result == nil {
-		g.logger.Info("succeeded", lager.Data{"count": count})
-	}
+	logger.Info("queing-complete", lager.Data{"duration": time.Since(start)})
 
-	return result
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
+
+	return processResults(logger, errCh)
 }
 
 func newDesiredLRP(guid string) (*models.DesiredLRP, error) {
@@ -114,7 +81,7 @@ func newDesiredLRP(guid string) (*models.DesiredLRP, error) {
 	modTag := models.NewModificationTag("epoch", 0)
 	desiredLRP := &models.DesiredLRP{
 		ProcessGuid:          guid,
-		Domain:               "some-domain",
+		Domain:               "benchmark-bbs",
 		RootFs:               "some:rootfs",
 		Instances:            1,
 		EnvironmentVariables: []*models.EnvironmentVariable{{Name: "FOO", Value: "bar"}},
@@ -150,4 +117,32 @@ func newDesiredLRP(guid string) (*models.DesiredLRP, error) {
 	}
 
 	return desiredLRP, nil
+}
+
+func processResults(logger lager.Logger, errCh chan error) (int, error) {
+	var totalResults int
+	var errorResults int
+
+	for err := range errCh {
+		if err != nil {
+			logger.Error("failed-seeding-desired-lrps", err)
+			errorResults++
+		}
+		totalResults++
+	}
+
+	errorRate := float64(errorResults) / float64(totalResults)
+	if errorRate > ERROR_TOLERANCE {
+		err := fmt.Errorf("Error rate of %.3f exceeds tolerance of %.3f", errorRate, ERROR_TOLERANCE)
+		logger.Error("failed", err)
+		return 0, err
+	}
+
+	logger.Info("complete", lager.Data{
+		"total-results": totalResults,
+		"error-results": errorResults,
+		"error-rate":    fmt.Sprintf("%.2f", errorRate),
+	})
+
+	return totalResults - errorResults, nil
 }
