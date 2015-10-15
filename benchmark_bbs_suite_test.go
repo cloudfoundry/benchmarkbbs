@@ -99,7 +99,7 @@ func init() {
 
 func TestBenchmarkBbs(t *testing.T) {
 	logger = lager.NewLogger("test")
-	logger.RegisterSink(lager.NewWriterSink(os.Stdout, lager.DEBUG))
+	logger.RegisterSink(lager.NewWriterSink(os.Stdout, lager.ERROR))
 
 	reporters = []Reporter{}
 
