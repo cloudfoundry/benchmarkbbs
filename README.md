@@ -18,6 +18,7 @@ ginkgo -- \
   -bbsClientKey=$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key \
   -encryptionKey="key1:a secure passphrase" \
   -activeKeyLabel=key1 \
+  -logFilename=test-output.log \
   -logLevel=info
 ```
 

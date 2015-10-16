@@ -6,9 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"runtime"
 	"strings"
@@ -53,6 +55,7 @@ var (
 	numPopulateWorkers int
 	expectedLRPCount   int
 	logLevel           string
+	logFilename        string
 
 	logger               lager.Logger
 	etcdClient           *etcd.Client
@@ -91,6 +94,7 @@ func init() {
 	flag.StringVar(&awsRegion, "awsRegion", "us-west-1", "AWS Bucket to store metrics")
 
 	flag.StringVar(&logLevel, "logLevel", string(INFO), "log level: debug, info, error or fatal")
+	flag.StringVar(&logFilename, "logFilename", "", "Name of local file to save logs to")
 
 	etcdFlags = AddETCDFlags(flag.CommandLine)
 	encryptionFlags = encryption.AddEncryptionFlags(flag.CommandLine)
@@ -121,8 +125,21 @@ func TestBenchmarkBbs(t *testing.T) {
 		panic(fmt.Errorf("unknown log level: %s", logLevel))
 	}
 
-	logger = lager.NewLogger("test")
-	logger.RegisterSink(lager.NewWriterSink(GinkgoWriter, lagerLogLevel))
+	var logWriter io.Writer
+	if logFilename == "" {
+		logWriter = GinkgoWriter
+	} else {
+		logFile, err := os.Create(logFilename)
+		if err != nil {
+			panic(fmt.Errorf("Error opening file '%s': %s", logFilename, err.Error()))
+		}
+		defer logFile.Close()
+
+		logWriter = logFile
+	}
+
+	logger = lager.NewLogger("bbs-benchmarks-test")
+	logger.RegisterSink(lager.NewWriterSink(logWriter, lagerLogLevel))
 
 	reporters = []Reporter{}
 
