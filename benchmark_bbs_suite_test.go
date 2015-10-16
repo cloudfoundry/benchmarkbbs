@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"runtime"
 	"strings"
@@ -25,7 +24,6 @@ import (
 	"github.com/cloudfoundry-incubator/bbs/format"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
-	"github.com/cloudfoundry-incubator/cf-lager"
 	"github.com/cloudfoundry-incubator/cf_http"
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/pivotal-golang/lager"
@@ -37,30 +35,40 @@ import (
 	"testing"
 )
 
-var bbsAddress string
-var bbsClientCert string
-var bbsClientKey string
-var etcdFlags *ETCDFlags
-var dataDogAPIKey string
-var dataDogAppKey string
-var awsAccessKeyID string
-var awsSecretAccessKey string
-var awsBucketName string
-var awsRegion string
-var desiredLRPs int
-var encryptionFlags *encryption.EncryptionFlags
-var metricPrefix string
-var numTrials int
-var numPopulateWorkers int
-var expectedLRPCount int
+var (
+	bbsAddress         string
+	bbsClientCert      string
+	bbsClientKey       string
+	etcdFlags          *ETCDFlags
+	dataDogAPIKey      string
+	dataDogAppKey      string
+	awsAccessKeyID     string
+	awsSecretAccessKey string
+	awsBucketName      string
+	awsRegion          string
+	desiredLRPs        int
+	encryptionFlags    *encryption.EncryptionFlags
+	metricPrefix       string
+	numTrials          int
+	numPopulateWorkers int
+	expectedLRPCount   int
+	logLevel           string
 
-var logger lager.Logger
-var etcdClient *etcd.Client
-var etcdDB *etcddb.ETCDDB
-var bbsClient bbs.Client
-var bbsClientHTTPTimeout time.Duration
-var dataDogReporter reporter.DataDogReporter
-var reporters []Reporter
+	logger               lager.Logger
+	etcdClient           *etcd.Client
+	etcdDB               *etcddb.ETCDDB
+	bbsClient            bbs.Client
+	bbsClientHTTPTimeout time.Duration
+	dataDogReporter      reporter.DataDogReporter
+	reporters            []Reporter
+)
+
+const (
+	DEBUG = "debug"
+	INFO  = "info"
+	ERROR = "error"
+	FATAL = "fatal"
+)
 
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -82,7 +90,8 @@ func init() {
 	flag.StringVar(&awsBucketName, "awsBucketName", "", "AWS Bucket to store metrics")
 	flag.StringVar(&awsRegion, "awsRegion", "us-west-1", "AWS Bucket to store metrics")
 
-	cf_lager.AddFlags(flag.CommandLine)
+	flag.StringVar(&logLevel, "logLevel", string(INFO), "log level: debug, info, error or fatal")
+
 	etcdFlags = AddETCDFlags(flag.CommandLine)
 	encryptionFlags = encryption.AddEncryptionFlags(flag.CommandLine)
 
@@ -98,8 +107,22 @@ func init() {
 }
 
 func TestBenchmarkBbs(t *testing.T) {
+	var lagerLogLevel lager.LogLevel
+	switch logLevel {
+	case DEBUG:
+		lagerLogLevel = lager.DEBUG
+	case INFO:
+		lagerLogLevel = lager.INFO
+	case ERROR:
+		lagerLogLevel = lager.ERROR
+	case FATAL:
+		lagerLogLevel = lager.FATAL
+	default:
+		panic(fmt.Errorf("unknown log level: %s", logLevel))
+	}
+
 	logger = lager.NewLogger("test")
-	logger.RegisterSink(lager.NewWriterSink(os.Stdout, lager.ERROR))
+	logger.RegisterSink(lager.NewWriterSink(GinkgoWriter, lagerLogLevel))
 
 	reporters = []Reporter{}
 
