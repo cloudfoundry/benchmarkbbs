@@ -38,24 +38,25 @@ import (
 )
 
 var (
-	bbsAddress         string
-	bbsClientCert      string
-	bbsClientKey       string
-	etcdFlags          *ETCDFlags
-	dataDogAPIKey      string
-	dataDogAppKey      string
-	awsAccessKeyID     string
-	awsSecretAccessKey string
-	awsBucketName      string
-	awsRegion          string
-	desiredLRPs        int
-	encryptionFlags    *encryption.EncryptionFlags
-	metricPrefix       string
-	numTrials          int
-	numPopulateWorkers int
-	expectedLRPCount   int
-	logLevel           string
-	logFilename        string
+	bbsAddress           string
+	bbsClientCert        string
+	bbsClientKey         string
+	etcdFlags            *ETCDFlags
+	dataDogAPIKey        string
+	dataDogAppKey        string
+	awsAccessKeyID       string
+	awsSecretAccessKey   string
+	awsBucketName        string
+	awsRegion            string
+	desiredLRPs          int
+	encryptionFlags      *encryption.EncryptionFlags
+	metricPrefix         string
+	numTrials            int
+	numPopulateWorkers   int
+	expectedLRPCount     int
+	expectedLRPTolerance float64
+	logLevel             string
+	logFilename          string
 
 	logger               lager.Logger
 	etcdClient           *etcd.Client
@@ -182,6 +183,7 @@ var _ = BeforeSuite(func() {
 		desiredLRPGenerator := generator.NewDesiredLRPGenerator(numPopulateWorkers, bbsClient, *etcdClient)
 		expectedLRPCount, err = desiredLRPGenerator.Generate(logger, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
+		expectedLRPTolerance = float64(expectedLRPCount) * generator.ERROR_TOLERANCE
 	}
 })
 

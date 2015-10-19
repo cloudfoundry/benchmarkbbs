@@ -18,11 +18,11 @@ var BenchmarkRouteEmitterFetching = func(numTrials int) {
 			b.Time("fetch all actualLRPs", func() {
 				actuals, err := bbsClient.ActualLRPGroups(models.ActualLRPFilter{})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(actuals).To(HaveLen(expectedLRPCount))
+				Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPTolerance))
 
 				desireds, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(desireds).To(HaveLen(expectedLRPCount))
+				Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPTolerance))
 			}, reporter.ReporterInfo{
 				MetricName: FetchActualLRPsAndSchedulingInfos,
 			})
