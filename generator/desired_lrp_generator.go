@@ -9,40 +9,59 @@ import (
 	"github.com/cloudfoundry-incubator/bbs"
 	"github.com/cloudfoundry-incubator/bbs/models"
 	"github.com/cloudfoundry/gunk/workpool"
-	"github.com/coreos/go-etcd/etcd"
 	"github.com/nu7hatch/gouuid"
 	"github.com/pivotal-golang/lager"
+	"github.com/zorkian/go-datadog-api"
 )
 
 const ERROR_TOLERANCE = 0.05
 
 type DesiredLRPGenerator struct {
-	bbsClient  bbs.Client
-	etcdClient etcd.Client
-	workPool   *workpool.WorkPool
+	metricPrefix  string
+	bbsClient     bbs.Client
+	datadogClient *datadog.Client
+	workPool      *workpool.WorkPool
 }
 
 func NewDesiredLRPGenerator(
+	metricPrefix string,
 	workpoolSize int,
 	bbsClient bbs.Client,
-	etcdClient etcd.Client,
+	datadogClient *datadog.Client,
 ) *DesiredLRPGenerator {
 	workPool, err := workpool.NewWorkPool(workpoolSize)
 	if err != nil {
 		panic(err)
 	}
 	return &DesiredLRPGenerator{
-		bbsClient:  bbsClient,
-		etcdClient: etcdClient,
-		workPool:   workPool,
+		metricPrefix:  metricPrefix,
+		bbsClient:     bbsClient,
+		workPool:      workPool,
+		datadogClient: datadogClient,
 	}
+}
+
+type stampedError struct {
+	error
+	time.Time
+}
+
+func newStampedError(err error) *stampedError {
+	if err != nil {
+		return &stampedError{err, time.Now()}
+	}
+	return nil
+}
+
+func newErrDataPoint(err *stampedError) datadog.DataPoint {
+	return datadog.DataPoint{float64(err.Unix()), 1}
 }
 
 func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, error) {
 	logger = logger.Session("generate-desired-lrp", lager.Data{"count": count})
 	start := time.Now()
 	var wg sync.WaitGroup
-	errCh := make(chan error, count)
+	errCh := make(chan *stampedError, count)
 
 	logger.Info("queing-started")
 	for i := 0; i < count; i++ {
@@ -55,10 +74,10 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, err
 			}
 			desired, err := newDesiredLRP(id.String())
 			if err != nil {
-				errCh <- err
+				errCh <- newStampedError(err)
 				return
 			}
-			errCh <- g.bbsClient.DesireLRP(desired)
+			errCh <- newStampedError(g.bbsClient.DesireLRP(desired))
 		})
 
 		if i%10000 == 0 {
@@ -73,7 +92,45 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, err
 		close(errCh)
 	}()
 
-	return processResults(logger, errCh)
+	return g.processResults(logger, errCh)
+}
+
+func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *stampedError) (int, error) {
+	var totalResults int
+	var errorResults int
+	errMetric := datadog.Metric{
+		Metric: fmt.Sprintf("%s.failed-bbs-requests", g.metricPrefix),
+	}
+
+	for err := range errCh {
+		if err != nil {
+			logger.Error("failed-seeding-desired-lrps", err)
+			errorResults++
+			errMetric.Points = append(errMetric.Points, newErrDataPoint(err))
+		}
+		totalResults++
+	}
+
+	errorRate := float64(errorResults) / float64(totalResults)
+	if errorRate > ERROR_TOLERANCE {
+		err := fmt.Errorf("Error rate of %.3f exceeds tolerance of %.3f", errorRate, ERROR_TOLERANCE)
+		logger.Error("failed", err)
+		return 0, err
+	}
+
+	logger.Info("complete", lager.Data{
+		"total-results": totalResults,
+		"error-results": errorResults,
+		"error-rate":    fmt.Sprintf("%.2f", errorRate),
+	})
+
+	if g.datadogClient != nil {
+		g.datadogClient.PostMetrics([]datadog.Metric{errMetric})
+		logger.Info("posting-datadog-metrics-complete")
+	} else {
+		logger.Info("skipping-datadog-metrics")
+	}
+	return totalResults - errorResults, nil
 }
 
 func newDesiredLRP(guid string) (*models.DesiredLRP, error) {
@@ -119,32 +176,4 @@ func newDesiredLRP(guid string) (*models.DesiredLRP, error) {
 	}
 
 	return desiredLRP, nil
-}
-
-func processResults(logger lager.Logger, errCh chan error) (int, error) {
-	var totalResults int
-	var errorResults int
-
-	for err := range errCh {
-		if err != nil {
-			logger.Error("failed-seeding-desired-lrps", err)
-			errorResults++
-		}
-		totalResults++
-	}
-
-	errorRate := float64(errorResults) / float64(totalResults)
-	if errorRate > ERROR_TOLERANCE {
-		err := fmt.Errorf("Error rate of %.3f exceeds tolerance of %.3f", errorRate, ERROR_TOLERANCE)
-		logger.Error("failed", err)
-		return 0, err
-	}
-
-	logger.Info("complete", lager.Data{
-		"total-results": totalResults,
-		"error-results": errorResults,
-		"error-rate":    fmt.Sprintf("%.2f", errorRate),
-	})
-
-	return totalResults - errorResults, nil
 }

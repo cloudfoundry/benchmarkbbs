@@ -63,6 +63,7 @@ var (
 	etcdDB               *etcddb.ETCDDB
 	bbsClient            bbs.Client
 	bbsClientHTTPTimeout time.Duration
+	dataDogClient        *datadog.Client
 	dataDogReporter      reporter.DataDogReporter
 	reporters            []Reporter
 )
@@ -145,7 +146,7 @@ func TestBenchmarkBbs(t *testing.T) {
 	reporters = []Reporter{}
 
 	if dataDogAPIKey != "" && dataDogAppKey != "" {
-		dataDogClient := datadog.NewClient(dataDogAPIKey, dataDogAppKey)
+		dataDogClient = datadog.NewClient(dataDogAPIKey, dataDogAppKey)
 		dataDogReporter = reporter.NewDataDogReporter(logger, metricPrefix, dataDogClient)
 		reporters = append(reporters, &dataDogReporter)
 	}
@@ -180,7 +181,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	if desiredLRPs > 0 {
-		desiredLRPGenerator := generator.NewDesiredLRPGenerator(numPopulateWorkers, bbsClient, *etcdClient)
+		desiredLRPGenerator := generator.NewDesiredLRPGenerator(metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
 		expectedLRPCount, err = desiredLRPGenerator.Generate(logger, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
 		expectedLRPTolerance = float64(expectedLRPCount) * generator.ERROR_TOLERANCE
