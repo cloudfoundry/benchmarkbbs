@@ -331,7 +331,7 @@ func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCD
 	Expect(err).NotTo(HaveOccurred())
 	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
 
-	return etcddb.NewETCD(format.ENCRYPTED_PROTO, cryptor, etcddb.NewStoreClient(etcdClient), nil, nil, nil, nil, nil)
+	return etcddb.NewETCD(format.ENCRYPTED_PROTO, 1000, 1000, cryptor, etcddb.NewStoreClient(etcdClient), nil, nil, nil, nil, nil)
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.Client {
