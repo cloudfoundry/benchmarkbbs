@@ -60,6 +60,7 @@ func (r *DataDogReporter) SpecDidComplete(specSummary *types.SpecSummary) {
 			}
 
 			timestamp := float64(time.Now().Unix())
+			r.logger.Info("sending-metrics-to-datadog", lager.Data{"metric": info.MetricName, "prefix": r.metricPrefix})
 			err := r.dataDogClient.PostMetrics([]datadog.Metric{
 				{
 					Metric: fmt.Sprintf("%s.%s", r.metricPrefix, info.MetricName),
@@ -69,9 +70,10 @@ func (r *DataDogReporter) SpecDidComplete(specSummary *types.SpecSummary) {
 				},
 			})
 			if err != nil {
-				r.logger.Error("failed-sending-metrics-to-datadog", err)
+				r.logger.Error("failed-sending-metrics-to-datadog", err, lager.Data{"metric": info.MetricName, "prefix": r.metricPrefix})
 				continue
 			}
+			r.logger.Info("sending-metrics-to-datadog-complete", lager.Data{"metric": info.MetricName, "prefix": r.metricPrefix})
 		}
 	}
 }
