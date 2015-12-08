@@ -125,8 +125,13 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *st
 	})
 
 	if g.datadogClient != nil {
-		g.datadogClient.PostMetrics([]datadog.Metric{errMetric})
-		logger.Info("posting-datadog-metrics-complete")
+		logger.Info("posting-datadog-metrics")
+		err := g.datadogClient.PostMetrics([]datadog.Metric{errMetric})
+		if err != nil {
+			logger.Error("failed-posting-datadog-metrics", err)
+		} else {
+			logger.Info("posting-datadog-metrics-complete")
+		}
 	} else {
 		logger.Info("skipping-datadog-metrics")
 	}
