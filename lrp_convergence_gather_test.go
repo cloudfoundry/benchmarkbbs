@@ -21,7 +21,7 @@ var BenchmarkConvergenceGathering = func(numTrials int) {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPTolerance))
 
-				desireds, err := etcdDB.GatherDesiredLRPs(logger, guids, &etcd.LRPMetricCounter{})
+				desireds, err := etcdDB.GatherAndPruneDesiredLRPs(logger, guids, &etcd.LRPMetricCounter{})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPTolerance))
 			}, reporter.ReporterInfo{
