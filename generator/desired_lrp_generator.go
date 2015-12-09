@@ -9,7 +9,6 @@ import (
 	"github.com/cloudfoundry-incubator/bbs"
 	"github.com/cloudfoundry-incubator/bbs/models"
 	"github.com/cloudfoundry/gunk/workpool"
-	"github.com/nu7hatch/gouuid"
 	"github.com/pivotal-golang/lager"
 	"github.com/zorkian/go-datadog-api"
 )
@@ -67,11 +66,7 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, err
 	logger.Info("queing-started")
 	for i := 0; i < count; i++ {
 		wg.Add(1)
-		newGuid, err := uuid.NewV4()
-		if err != nil {
-			panic(err)
-		}
-		id := newGuid.String()
+		id := fmt.Sprintf("BENCHMARK-BBS-GUID-%06d", i)
 		g.workPool.Submit(func() {
 			defer wg.Done()
 			desired, err := newDesiredLRP(id)
