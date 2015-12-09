@@ -43,12 +43,13 @@ func NewDesiredLRPGenerator(
 
 type stampedError struct {
 	error
+	guid string
 	time.Time
 }
 
-func newStampedError(err error) *stampedError {
+func newStampedError(err error, guid string) *stampedError {
 	if err != nil {
-		return &stampedError{err, time.Now()}
+		return &stampedError{err, guid, time.Now()}
 	}
 	return nil
 }
@@ -66,18 +67,19 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, err
 	logger.Info("queing-started")
 	for i := 0; i < count; i++ {
 		wg.Add(1)
+		newGuid, err := uuid.NewV4()
+		if err != nil {
+			panic(err)
+		}
+		id := newGuid.String()
 		g.workPool.Submit(func() {
 			defer wg.Done()
-			id, err := uuid.NewV4()
+			desired, err := newDesiredLRP(id)
 			if err != nil {
-				panic(err)
-			}
-			desired, err := newDesiredLRP(id.String())
-			if err != nil {
-				errCh <- newStampedError(err)
+				errCh <- newStampedError(err, id)
 				return
 			}
-			errCh <- newStampedError(g.bbsClient.DesireLRP(desired))
+			errCh <- newStampedError(g.bbsClient.DesireLRP(desired), id)
 		})
 
 		if i%10000 == 0 {
@@ -104,7 +106,8 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *st
 
 	for err := range errCh {
 		if err != nil {
-			logger.Error("failed-seeding-desired-lrps", err)
+			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
+			logger.Error("failed-seeding-desired-lrps", newErr)
 			errorResults++
 			errMetric.Points = append(errMetric.Points, newErrDataPoint(err))
 		}
