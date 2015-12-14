@@ -28,6 +28,7 @@ import (
 	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 	"github.com/cloudfoundry-incubator/cf_http"
 	"github.com/coreos/go-etcd/etcd"
+	"github.com/pivotal-golang/clock"
 	"github.com/pivotal-golang/lager"
 	"github.com/zorkian/go-datadog-api"
 
@@ -331,7 +332,7 @@ func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCD
 	Expect(err).NotTo(HaveOccurred())
 	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
 
-	return etcddb.NewETCD(format.ENCRYPTED_PROTO, 1000, 1000, 1*time.Minute, cryptor, etcddb.NewStoreClient(etcdClient), nil, nil, nil, nil, nil)
+	return etcddb.NewETCD(format.ENCRYPTED_PROTO, 1000, 1000, 1*time.Minute, cryptor, etcddb.NewStoreClient(etcdClient), nil, nil, clock.NewClock(), nil, nil)
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.Client {
