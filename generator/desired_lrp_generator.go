@@ -13,16 +13,16 @@ import (
 	"github.com/zorkian/go-datadog-api"
 )
 
-const ERROR_TOLERANCE = 0.05
-
 type DesiredLRPGenerator struct {
-	metricPrefix  string
-	bbsClient     bbs.Client
-	datadogClient *datadog.Client
-	workPool      *workpool.WorkPool
+	errorTolerance float64
+	metricPrefix   string
+	bbsClient      bbs.Client
+	datadogClient  *datadog.Client
+	workPool       *workpool.WorkPool
 }
 
 func NewDesiredLRPGenerator(
+	errTolerance float64,
 	metricPrefix string,
 	workpoolSize int,
 	bbsClient bbs.Client,
@@ -33,10 +33,11 @@ func NewDesiredLRPGenerator(
 		panic(err)
 	}
 	return &DesiredLRPGenerator{
-		metricPrefix:  metricPrefix,
-		bbsClient:     bbsClient,
-		workPool:      workPool,
-		datadogClient: datadogClient,
+		errorTolerance: errTolerance,
+		metricPrefix:   metricPrefix,
+		bbsClient:      bbsClient,
+		workPool:       workPool,
+		datadogClient:  datadogClient,
 	}
 }
 
@@ -106,8 +107,8 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *st
 	}
 
 	errorRate := float64(errorResults) / float64(totalResults)
-	if errorRate > ERROR_TOLERANCE {
-		err := fmt.Errorf("Error rate of %.3f exceeds tolerance of %.3f", errorRate, ERROR_TOLERANCE)
+	if errorRate > g.errorTolerance {
+		err := fmt.Errorf("Error rate of %.3f exceeds tolerance of %.3f", errorRate, g.errorTolerance)
 		logger.Error("failed", err)
 		return 0, err
 	}

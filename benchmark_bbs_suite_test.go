@@ -56,6 +56,7 @@ var (
 	numPopulateWorkers   int
 	expectedLRPCount     int
 	expectedLRPTolerance float64
+	errorTolerance       float64
 	logLevel             string
 	logFilename          string
 
@@ -98,6 +99,7 @@ func init() {
 
 	flag.StringVar(&logLevel, "logLevel", string(INFO), "log level: debug, info, error or fatal")
 	flag.StringVar(&logFilename, "logFilename", "", "Name of local file to save logs to")
+	flag.Float64Var(&errorTolerance, "errorTolerance", 0.05, "error tollerance rate")
 
 	etcdFlags = AddETCDFlags(flag.CommandLine)
 	encryptionFlags = encryption.AddEncryptionFlags(flag.CommandLine)
@@ -182,10 +184,10 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	if desiredLRPs > 0 {
-		desiredLRPGenerator := generator.NewDesiredLRPGenerator(metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
+		desiredLRPGenerator := generator.NewDesiredLRPGenerator(errorTolerance, metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
 		expectedLRPCount, err = desiredLRPGenerator.Generate(logger, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
-		expectedLRPTolerance = float64(expectedLRPCount) * generator.ERROR_TOLERANCE
+		expectedLRPTolerance = float64(expectedLRPCount) * errorTolerance
 	}
 })
 

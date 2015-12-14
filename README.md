@@ -39,3 +39,7 @@ If you'd like to have metrics saved to an S3 bucket, add the following flags:
 -awsRegion=$AWS_REGION # defaults to us-west-1
 ```
 
+If you'd like to change the error tolerance allowed, add the following flag:
+```
+-errorTolerance=0.025
+```
