@@ -95,16 +95,12 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, err
 func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *stampedError) (int, error) {
 	var totalResults int
 	var errorResults int
-	errMetric := datadog.Metric{
-		Metric: fmt.Sprintf("%s.failed-bbs-requests", g.metricPrefix),
-	}
 
 	for err := range errCh {
 		if err != nil {
 			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
 			logger.Error("failed-seeding-desired-lrps", newErr)
 			errorResults++
-			errMetric.Points = append(errMetric.Points, newErrDataPoint(err))
 		}
 		totalResults++
 	}
@@ -124,7 +120,15 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *st
 
 	if g.datadogClient != nil {
 		logger.Info("posting-datadog-metrics")
-		err := g.datadogClient.PostMetrics([]datadog.Metric{errMetric})
+		timestamp := float64(time.Now().Unix())
+		err := g.datadogClient.PostMetrics([]datadog.Metric{
+			{
+				Metric: fmt.Sprintf("%s.failed-bbs-requests", g.metricPrefix),
+				Points: []datadog.DataPoint{
+					{timestamp, float64(errorResults)},
+				},
+			},
+		})
 		if err != nil {
 			logger.Error("failed-posting-datadog-metrics", err)
 		} else {
