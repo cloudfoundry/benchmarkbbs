@@ -169,7 +169,7 @@ func TestBenchmarkBbs(t *testing.T) {
 	RunSpecsWithDefaultAndCustomReporters(t, "Benchmark BBS Suite", reporters)
 }
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
 	etcdOptions, err := etcdFlags.Validate()
 	Expect(err).NotTo(HaveOccurred())
 
@@ -182,16 +182,28 @@ var _ = BeforeSuite(func() {
 
 	_, err = bbsClient.Domains()
 	Expect(err).NotTo(HaveOccurred())
-
 	if desiredLRPs > 0 {
 		desiredLRPGenerator := generator.NewDesiredLRPGenerator(errorTolerance, metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
 		expectedLRPCount, err = desiredLRPGenerator.Generate(logger, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
 		expectedLRPTolerance = float64(expectedLRPCount) * errorTolerance
 	}
+	values := fmt.Sprintf("%d %f", expectedLRPCount, expectedLRPTolerance)
+	return []byte(values)
+}, func(data []byte) {
+	values := string(data)
+	fmt.Sscanf(values, "%d %f", &expectedLRPCount, &expectedLRPTolerance)
+	if etcdClient == nil {
+		etcdOptions, err := etcdFlags.Validate()
+		Expect(err).NotTo(HaveOccurred())
+		etcdClient = initializeEtcdClient(logger, etcdOptions)
+		bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
+		etcdDB = initializeETCDDB(logger, etcdClient)
+	}
 })
 
-var _ = AfterSuite(func() {
+var _ = SynchronizedAfterSuite(func() {
+}, func() {
 	purge("/v1/desired_lrp")
 	purge("/v1/actual")
 })

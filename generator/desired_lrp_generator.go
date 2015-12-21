@@ -107,17 +107,17 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *st
 	}
 
 	errorRate := float64(errorResults) / float64(totalResults)
-	if errorRate > g.errorTolerance {
-		err := fmt.Errorf("Error rate of %.3f exceeds tolerance of %.3f", errorRate, g.errorTolerance)
-		logger.Error("failed", err)
-		return 0, err
-	}
-
 	logger.Info("complete", lager.Data{
 		"total-results": totalResults,
 		"error-results": errorResults,
 		"error-rate":    fmt.Sprintf("%.2f", errorRate),
 	})
+
+	if errorRate > g.errorTolerance {
+		err := fmt.Errorf("Error rate of %.3f exceeds tolerance of %.3f", errorRate, g.errorTolerance)
+		logger.Error("failed", err)
+		return 0, err
+	}
 
 	if g.datadogClient != nil {
 		logger.Info("posting-datadog-metrics")
