@@ -5,13 +5,13 @@ To run the BBS benchmarks against [BOSH Lite](https://github.com/cloudfoundry/bo
 Run ginkgo:
 
 ```
-ginkgo -- \
+ginkgo -nodes=3 -- \
   -desiredLRPs=5000 \
   -numTrials=10 \
   -numPopulateWorkers=10 \
-  -bbsAddress=https://10.244.16.130:8889 \
+  -bbsAddress=https://10.244.16.2:8889 \
   -bbsClientHTTPTimeout=10s \
-  -etcdCluster=https://10.244.16.130:4001 \
+  -etcdCluster=https://10.244.16.2:4001 \
   -etcdCertFile=$GOPATH/manifest-generation/bosh-lite-stubs/etcd-certs/client.crt \
   -etcdKeyFile=$GOPATH/manifest-generation/bosh-lite-stubs/etcd-certs/client.key \
   -bbsClientCert=$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt \
