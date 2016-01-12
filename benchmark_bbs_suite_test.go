@@ -342,8 +342,14 @@ func initializeEtcdClient(logger lager.Logger, etcdOptions *etcddb.ETCDOptions) 
 }
 
 func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCDDB {
-	keyManager, err := encryptionFlags.Validate()
-	Expect(err).NotTo(HaveOccurred())
+	key, keys, err := encryptionFlags.Parse()
+	if err != nil {
+		logger.Fatal("cannot-setup-encryption", err)
+	}
+	keyManager, err := encryption.NewKeyManager(key, keys)
+	if err != nil {
+		logger.Fatal("cannot-setup-encryption", err)
+	}
 	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
 
 	return etcddb.NewETCD(format.ENCRYPTED_PROTO, 1000, 1000, 1*time.Minute, cryptor, etcddb.NewStoreClient(etcdClient), nil, nil, clock.NewClock(), nil, nil)
