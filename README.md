@@ -5,9 +5,10 @@ To run the BBS benchmarks against [BOSH Lite](https://github.com/cloudfoundry/bo
 Run ginkgo:
 
 ```
-ginkgo -nodes=3 -- \
+ginkgo -nodes=4 -- \
   -desiredLRPs=5000 \
   -numTrials=10 \
+  -numReps=5 \
   -numPopulateWorkers=10 \
   -bbsAddress=https://10.244.16.2:8889 \
   -bbsClientHTTPTimeout=10s \

@@ -3,6 +3,7 @@ package benchmark_bbs_test
 import (
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -39,26 +40,38 @@ import (
 )
 
 var (
-	bbsAddress           string
-	bbsClientCert        string
-	bbsClientKey         string
-	etcdFlags            *ETCDFlags
-	dataDogAPIKey        string
-	dataDogAppKey        string
-	awsAccessKeyID       string
-	awsSecretAccessKey   string
-	awsBucketName        string
-	awsRegion            string
-	desiredLRPs          int
-	encryptionFlags      *encryption.EncryptionFlags
-	metricPrefix         string
-	numTrials            int
-	numPopulateWorkers   int
+	bbsAddress    string
+	bbsClientCert string
+	bbsClientKey  string
+
+	etcdFlags *ETCDFlags
+
+	dataDogAPIKey string
+	dataDogAppKey string
+
+	awsAccessKeyID     string
+	awsSecretAccessKey string
+	awsBucketName      string
+	awsRegion          string
+
+	desiredLRPs     int
+	encryptionFlags *encryption.EncryptionFlags
+	metricPrefix    string
+
+	numTrials          int
+	numReps            int
+	numPopulateWorkers int
+
 	expectedLRPCount     int
 	expectedLRPTolerance float64
-	errorTolerance       float64
-	logLevel             string
-	logFilename          string
+
+	expectedActualLRPCounts     map[string]int
+	expectedActualLRPTolerances map[string]float64
+
+	errorTolerance float64
+
+	logLevel    string
+	logFilename string
 
 	logger               lager.Logger
 	etcdClient           *etcd.Client
@@ -80,6 +93,7 @@ const (
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	flag.IntVar(&numTrials, "numTrials", 10, "number of benchmark trials to average across")
+	flag.IntVar(&numReps, "numReps", 10, "number of reps to simulate")
 	flag.IntVar(&numPopulateWorkers, "numPopulateWorkers", 10, "number of workers generating desired LRPs during setup")
 	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of single instance DesiredLRPs to create")
 
@@ -113,6 +127,7 @@ func init() {
 	BenchmarkConvergenceGathering(numTrials)
 	BenchmarkNsyncFetching(numTrials)
 	BenchmarkRouteEmitterFetching(numTrials)
+	BenchmarkRepFetching(numReps, numTrials)
 }
 
 func TestBenchmarkBbs(t *testing.T) {
@@ -169,6 +184,14 @@ func TestBenchmarkBbs(t *testing.T) {
 	RunSpecsWithDefaultAndCustomReporters(t, "Benchmark BBS Suite", reporters)
 }
 
+type expectedLRPCounts struct {
+	DesiredLRPCount     int     `json:"desired_lrp_count"`
+	DesiredLRPTolerance float64 `json:"desired_lrp_tolerance"`
+
+	ActualLRPCounts     map[string]int     `json:"actual_lrp_counts"`
+	ActualLRPTolerances map[string]float64 `json:"actual_lrp_tolerances"`
+}
+
 var _ = SynchronizedBeforeSuite(func() []byte {
 	etcdOptions, err := etcdFlags.Validate()
 	Expect(err).NotTo(HaveOccurred())
@@ -182,17 +205,45 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	_, err = bbsClient.Domains()
 	Expect(err).NotTo(HaveOccurred())
+
+	var expectedDesiredLRPCount int
+	var expectedDesiredLRPTolerance float64
+	expectedActualLRPCounts := make(map[string]int)
+	expectedActualLRPTolerances := make(map[string]float64)
+
 	if desiredLRPs > 0 {
 		desiredLRPGenerator := generator.NewDesiredLRPGenerator(errorTolerance, metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
-		expectedLRPCount, err = desiredLRPGenerator.Generate(logger, desiredLRPs)
+		expectedDesiredLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, numReps, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
-		expectedLRPTolerance = float64(expectedLRPCount) * errorTolerance
+		expectedDesiredLRPTolerance = float64(expectedLRPCount) * errorTolerance
+
+		for k, v := range expectedActualLRPCounts {
+			expectedActualLRPTolerances[k] = float64(v) * errorTolerance
+		}
 	}
-	values := fmt.Sprintf("%d %f", expectedLRPCount, expectedLRPTolerance)
-	return []byte(values)
+
+	counts := expectedLRPCounts{
+		DesiredLRPCount:     expectedDesiredLRPCount,
+		DesiredLRPTolerance: expectedDesiredLRPTolerance,
+		ActualLRPCounts:     expectedActualLRPCounts,
+		ActualLRPTolerances: expectedActualLRPTolerances,
+	}
+
+	data, err := json.Marshal(counts)
+	Expect(err).NotTo(HaveOccurred())
+
+	return data
 }, func(data []byte) {
-	values := string(data)
-	fmt.Sscanf(values, "%d %f", &expectedLRPCount, &expectedLRPTolerance)
+	var expectedLRPCounts expectedLRPCounts
+	err := json.Unmarshal(data, &expectedLRPCounts)
+	Expect(err).NotTo(HaveOccurred())
+
+	expectedLRPCount = expectedLRPCounts.DesiredLRPCount
+	expectedLRPTolerance = expectedLRPCounts.DesiredLRPTolerance
+
+	expectedActualLRPCounts = expectedLRPCounts.ActualLRPCounts
+	expectedActualLRPTolerances = expectedLRPCounts.ActualLRPTolerances
+
 	if etcdClient == nil {
 		etcdOptions, err := etcdFlags.Validate()
 		Expect(err).NotTo(HaveOccurred())

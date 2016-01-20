@@ -3,6 +3,7 @@ package generator
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -42,27 +43,29 @@ func NewDesiredLRPGenerator(
 }
 
 type stampedError struct {
-	error
-	guid string
+	err    error
+	guid   string
+	cellId string
 	time.Time
 }
 
-func newStampedError(err error, guid string) *stampedError {
-	if err != nil {
-		return &stampedError{err, guid, time.Now()}
-	}
-	return nil
+func newStampedError(err error, guid, cellId string) *stampedError {
+	return &stampedError{err, guid, cellId, time.Now()}
 }
 
 func newErrDataPoint(err *stampedError) datadog.DataPoint {
 	return datadog.DataPoint{float64(err.Unix()), 1}
 }
 
-func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, error) {
+func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) (int, map[string]int, error) {
 	logger = logger.Session("generate-desired-lrp", lager.Data{"count": count})
+
 	start := time.Now()
+
 	var wg sync.WaitGroup
-	errCh := make(chan *stampedError, count)
+
+	desiredErrCh := make(chan *stampedError, count)
+	actualErrCh := make(chan *stampedError, count)
 
 	logger.Info("queing-started")
 	for i := 0; i < count; i++ {
@@ -70,12 +73,24 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, err
 		id := fmt.Sprintf("BENCHMARK-BBS-GUID-%06d", i)
 		g.workPool.Submit(func() {
 			defer wg.Done()
+
 			desired, err := newDesiredLRP(id)
 			if err != nil {
-				errCh <- newStampedError(err, id)
+				desiredErrCh <- newStampedError(err, id, "")
 				return
 			}
-			errCh <- newStampedError(g.bbsClient.DesireLRP(desired), id)
+			desiredErrCh <- newStampedError(g.bbsClient.DesireLRP(desired), id, "")
+
+			cellID := fmt.Sprintf("cell-%d", rand.Intn(numReps))
+			actualErrCh <- newStampedError(
+				g.bbsClient.ClaimActualLRP(
+					desired.ProcessGuid,
+					0,
+					&models.ActualLRPInstanceKey{InstanceGuid: desired.ProcessGuid + "-i", CellId: cellID},
+				),
+				id,
+				cellID,
+			)
 		})
 
 		if i%10000 == 0 {
@@ -87,18 +102,19 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, count int) (int, err
 
 	go func() {
 		wg.Wait()
-		close(errCh)
+		close(desiredErrCh)
+		close(actualErrCh)
 	}()
 
-	return g.processResults(logger, errCh)
+	return g.processResults(logger, desiredErrCh, actualErrCh)
 }
 
-func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *stampedError) (int, error) {
-	var totalResults int
-	var errorResults int
+func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, actualErrCh chan *stampedError) (int, map[string]int, error) {
+	var totalResults, totalActualResults, errorResults, errorActualResults int
+	actualResults := make(map[string]int)
 
-	for err := range errCh {
-		if err != nil {
+	for err := range desiredErrCh {
+		if err.err != nil {
 			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
 			logger.Error("failed-seeding-desired-lrps", newErr)
 			errorResults++
@@ -106,17 +122,45 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *st
 		totalResults++
 	}
 
+	for err := range actualErrCh {
+		if _, ok := actualResults[err.cellId]; !ok {
+			actualResults[err.cellId] = 0
+		}
+
+		if err.err != nil {
+			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
+			logger.Error("failed-seeding-desired-lrps", newErr)
+			errorActualResults++
+		}
+
+		actualResults[err.cellId]++
+		totalActualResults++
+	}
+
 	errorRate := float64(errorResults) / float64(totalResults)
-	logger.Info("complete", lager.Data{
+	logger.Info("desireds-complete", lager.Data{
 		"total-results": totalResults,
 		"error-results": errorResults,
 		"error-rate":    fmt.Sprintf("%.2f", errorRate),
 	})
 
 	if errorRate > g.errorTolerance {
-		err := fmt.Errorf("Error rate of %.3f exceeds tolerance of %.3f", errorRate, g.errorTolerance)
+		err := fmt.Errorf("Error rate of %.3f for desireds exceeds tolerance of %.3f", errorRate, g.errorTolerance)
 		logger.Error("failed", err)
-		return 0, err
+		return 0, nil, err
+	}
+
+	actualErrorRate := float64(errorActualResults) / float64(totalActualResults)
+	logger.Info("actuals-complete", lager.Data{
+		"total-results": totalActualResults,
+		"error-results": errorActualResults,
+		"error-rate":    fmt.Sprintf("%.2f", actualErrorRate),
+	})
+
+	if actualErrorRate > g.errorTolerance {
+		err := fmt.Errorf("Error rate of %.3f for actuals exceeds tolerance of %.3f", actualErrorRate, g.errorTolerance)
+		logger.Error("failed", err)
+		return 0, nil, err
 	}
 
 	if g.datadogClient != nil {
@@ -124,21 +168,31 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, errCh chan *st
 		timestamp := float64(time.Now().Unix())
 		err := g.datadogClient.PostMetrics([]datadog.Metric{
 			{
-				Metric: fmt.Sprintf("%s.failed-bbs-requests", g.metricPrefix),
+				Metric: fmt.Sprintf("%s.failed-desired-requests", g.metricPrefix),
 				Points: []datadog.DataPoint{
 					{timestamp, float64(errorResults)},
 				},
 			},
 		})
+
 		if err != nil {
 			logger.Error("failed-posting-datadog-metrics", err)
-		} else {
-			logger.Info("posting-datadog-metrics-complete")
 		}
-	} else {
-		logger.Info("skipping-datadog-metrics")
+
+		err = g.datadogClient.PostMetrics([]datadog.Metric{
+			{
+				Metric: fmt.Sprintf("%s.failed-actual-requests", g.metricPrefix),
+				Points: []datadog.DataPoint{
+					{timestamp, float64(errorActualResults)},
+				},
+			},
+		})
+		if err != nil {
+			logger.Error("failed-posting-datadog-metrics", err)
+		}
 	}
-	return totalResults - errorResults, nil
+
+	return totalResults - errorResults, actualResults, nil
 }
 
 func newDesiredLRP(guid string) (*models.DesiredLRP, error) {
