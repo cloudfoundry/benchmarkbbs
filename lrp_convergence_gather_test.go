@@ -19,11 +19,11 @@ var BenchmarkConvergenceGathering = func(numTrials int) {
 			b.Time("BBS' internal gathering of LRPs", func() {
 				actuals, err := etcdDB.GatherActualLRPs(logger, guids, &etcd.LRPMetricCounter{})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPTolerance))
+				Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation))
 
 				desireds, err := etcdDB.GatherAndPruneDesiredLRPs(logger, guids, &etcd.LRPMetricCounter{})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPTolerance))
+				Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation))
 			}, reporter.ReporterInfo{
 				MetricName: ConvergenceGathering,
 			})

@@ -63,10 +63,10 @@ var (
 	numPopulateWorkers int
 
 	expectedLRPCount     int
-	expectedLRPTolerance float64
+	expectedLRPVariation float64
 
 	expectedActualLRPCounts     map[string]int
-	expectedActualLRPTolerances map[string]float64
+	expectedActualLRPVariations map[string]float64
 
 	errorTolerance float64
 
@@ -185,11 +185,11 @@ func TestBenchmarkBbs(t *testing.T) {
 }
 
 type expectedLRPCounts struct {
-	DesiredLRPCount     int     `json:"desired_lrp_count"`
-	DesiredLRPTolerance float64 `json:"desired_lrp_tolerance"`
+	DesiredLRPCount     int
+	DesiredLRPVariation float64
 
-	ActualLRPCounts     map[string]int     `json:"actual_lrp_counts"`
-	ActualLRPTolerances map[string]float64 `json:"actual_lrp_tolerances"`
+	ActualLRPCounts     map[string]int
+	ActualLRPVariations map[string]float64
 }
 
 var _ = SynchronizedBeforeSuite(func() []byte {
@@ -207,26 +207,26 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 
 	var expectedDesiredLRPCount int
-	var expectedDesiredLRPTolerance float64
+	var expectedDesiredLRPVariation float64
 	expectedActualLRPCounts := make(map[string]int)
-	expectedActualLRPTolerances := make(map[string]float64)
+	expectedActualLRPVariations := make(map[string]float64)
 
 	if desiredLRPs > 0 {
 		desiredLRPGenerator := generator.NewDesiredLRPGenerator(errorTolerance, metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
 		expectedDesiredLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, numReps, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
-		expectedDesiredLRPTolerance = float64(expectedLRPCount) * errorTolerance
+		expectedDesiredLRPVariation = float64(expectedLRPCount) * errorTolerance
 
 		for k, v := range expectedActualLRPCounts {
-			expectedActualLRPTolerances[k] = float64(v) * errorTolerance
+			expectedActualLRPVariations[k] = float64(v) * errorTolerance
 		}
 	}
 
 	counts := expectedLRPCounts{
 		DesiredLRPCount:     expectedDesiredLRPCount,
-		DesiredLRPTolerance: expectedDesiredLRPTolerance,
+		DesiredLRPVariation: expectedDesiredLRPVariation,
 		ActualLRPCounts:     expectedActualLRPCounts,
-		ActualLRPTolerances: expectedActualLRPTolerances,
+		ActualLRPVariations: expectedActualLRPVariations,
 	}
 
 	data, err := json.Marshal(counts)
@@ -239,10 +239,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 
 	expectedLRPCount = expectedLRPCounts.DesiredLRPCount
-	expectedLRPTolerance = expectedLRPCounts.DesiredLRPTolerance
+	expectedLRPVariation = expectedLRPCounts.DesiredLRPVariation
 
 	expectedActualLRPCounts = expectedLRPCounts.ActualLRPCounts
-	expectedActualLRPTolerances = expectedLRPCounts.ActualLRPTolerances
+	expectedActualLRPVariations = expectedLRPCounts.ActualLRPVariations
 
 	if etcdClient == nil {
 		etcdOptions, err := etcdFlags.Validate()

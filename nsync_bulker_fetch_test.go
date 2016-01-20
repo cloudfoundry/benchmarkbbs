@@ -18,7 +18,7 @@ var BenchmarkNsyncFetching = func(numTrials int) {
 			b.Time("fetch all desired LRP scheduling info", func() {
 				desireds, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPTolerance))
+				Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation))
 			}, reporter.ReporterInfo{
 				MetricName: NsyncBulkerFetching,
 			})

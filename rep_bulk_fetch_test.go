@@ -40,10 +40,10 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 							expectedActualLRPCount, ok := expectedActualLRPCounts[cellID]
 							Expect(ok).To(BeTrue())
 
-							expectedActualLRPTolerance, ok := expectedActualLRPTolerances[cellID]
+							expectedActualLRPVariation, ok := expectedActualLRPVariations[cellID]
 							Expect(ok).To(BeTrue())
 
-							Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPTolerance))
+							Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation))
 						}, reporter.ReporterInfo{
 							MetricName: RepBulkFetching,
 						})
