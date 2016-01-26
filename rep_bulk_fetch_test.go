@@ -18,7 +18,7 @@ const (
 var repBulkCycle = 30 * time.Second
 
 var BenchmarkRepFetching = func(numReps, numTrials int) {
-	Describe("Fetching for rep bulk loop", func() {
+	PDescribe("Fetching for rep bulk loop", func() {
 		Measure("data for rep bulk", func(b Benchmarker) {
 			time.Sleep(repBulkCycle)
 			b.Time("rep bulk loop", func() {
