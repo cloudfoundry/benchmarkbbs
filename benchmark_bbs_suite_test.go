@@ -215,7 +215,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		desiredLRPGenerator := generator.NewDesiredLRPGenerator(errorTolerance, metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
 		expectedDesiredLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, numReps, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
-		expectedDesiredLRPVariation = float64(expectedLRPCount) * errorTolerance
+		expectedDesiredLRPVariation = float64(expectedDesiredLRPCount) * errorTolerance
 
 		for k, v := range expectedActualLRPCounts {
 			expectedActualLRPVariations[k] = float64(v) * errorTolerance

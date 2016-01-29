@@ -14,6 +14,7 @@ import (
 
 const (
 	RepBulkFetching = "RepBulkFetching"
+	RepBulkLoop     = "RepBulkLoop"
 )
 
 var repBulkCycle = 30
@@ -25,7 +26,7 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 		)
 
 		BeforeEach(func() {
-			r = rand.New(rand.NewSource(99))
+			r = rand.New(rand.NewSource(time.Now().UnixNano()))
 		})
 
 		Measure("data for rep bulk", func(b Benchmarker) {
@@ -39,9 +40,6 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 							wg.Done()
 						}()
 
-						// We are setting the sleep duration to a constant spread of randomly generated numbers.
-						// This ensures that there should be no issues with timing causing a flacky test as long as
-						// we are confident that the numbers should pass.
 						sleepDuration := time.Duration(repBulkCycle-r.Intn(repBulkCycle)) * time.Second
 						time.Sleep(sleepDuration)
 
@@ -59,11 +57,14 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 
 							Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation))
 						}, reporter.ReporterInfo{
-							MetricName: RepBulkFetching,
+							MetricName:  RepBulkFetching,
+							MetricIndex: cellID,
 						})
 					}(cellID)
 				}
 				wg.Wait()
+			}, reporter.ReporterInfo{
+				MetricName: RepBulkLoop,
 			})
 		}, numTrials)
 	})

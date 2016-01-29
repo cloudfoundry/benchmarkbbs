@@ -78,7 +78,12 @@ func (r *S3Reporter) SpecDidComplete(specSummary *ginkgotypes.SpecSummary) {
 				r.logger.Error("failed-marshaling-data", err)
 			}
 
-			key := info.MetricName + "/" + now.Format(time.RFC3339)
+			var key string
+			if info.MetricIndex != "" {
+				key = info.MetricName + "/" + now.Format(time.RFC3339) + "_" + info.MetricIndex
+			} else {
+				key = info.MetricName + "/" + now.Format(time.RFC3339)
+			}
 			_, err = r.uploader.Upload(&s3manager.UploadInput{
 				Bucket: aws.String(r.bucketName),
 				Key:    aws.String(key),

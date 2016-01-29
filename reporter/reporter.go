@@ -1,5 +1,6 @@
 package reporter
 
 type ReporterInfo struct {
-	MetricName string
+	MetricName  string
+	MetricIndex string
 }
