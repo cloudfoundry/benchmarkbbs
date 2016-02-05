@@ -2,6 +2,11 @@
 
 To run the BBS benchmarks against [BOSH Lite](https://github.com/cloudfoundry/bosh-lite):
 
+Before you run these tests, stop the brain vm:
+```
+bosh stop brain_z1 0
+```
+
 Run ginkgo:
 
 ```
