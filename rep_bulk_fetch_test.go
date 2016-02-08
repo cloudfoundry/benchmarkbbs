@@ -21,14 +21,6 @@ var repBulkCycle = 30
 
 var BenchmarkRepFetching = func(numReps, numTrials int) {
 	Describe("Fetching for rep bulk loop", func() {
-		var (
-			r *rand.Rand
-		)
-
-		BeforeEach(func() {
-			r = rand.New(rand.NewSource(time.Now().UnixNano()))
-		})
-
 		Measure("data for rep bulk", func(b Benchmarker) {
 			b.Time("rep bulk loop", func() {
 				wg := sync.WaitGroup{}
@@ -36,36 +28,40 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 					cellID := fmt.Sprintf("cell-%d", i)
 					wg.Add(1)
 					go func(cellID string) {
-						defer func() {
-							wg.Done()
-						}()
+						defer wg.Done()
 
-						sleepDuration := time.Duration(repBulkCycle-r.Intn(repBulkCycle)) * time.Second
-						time.Sleep(sleepDuration)
+						for j := 0; j < numTrials; j++ {
+							sleepDuration := 30 * time.Second
+							if j == 0 {
+								numMilli := rand.Intn(30000)
+								sleepDuration = time.Duration(numMilli) * time.Millisecond
+							}
+							time.Sleep(sleepDuration)
 
-						defer GinkgoRecover()
-						b.Time(fmt.Sprintf("%s: fetch actualLRPs", cellID), func() {
-							defer GinkgoRecover()
-							actuals, err := bbsClient.ActualLRPGroups(models.ActualLRPFilter{CellID: cellID})
-							Expect(err).NotTo(HaveOccurred())
+							b.Time(fmt.Sprintf("%s: fetch actualLRPs", cellID), func() {
+								defer GinkgoRecover()
+								actuals, err := bbsClient.ActualLRPGroups(models.ActualLRPFilter{CellID: cellID})
+								Expect(err).NotTo(HaveOccurred())
 
-							expectedActualLRPCount, ok := expectedActualLRPCounts[cellID]
-							Expect(ok).To(BeTrue())
+								expectedActualLRPCount, ok := expectedActualLRPCounts[cellID]
+								Expect(ok).To(BeTrue())
 
-							expectedActualLRPVariation, ok := expectedActualLRPVariations[cellID]
-							Expect(ok).To(BeTrue())
+								expectedActualLRPVariation, ok := expectedActualLRPVariations[cellID]
+								Expect(ok).To(BeTrue())
 
-							Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation))
-						}, reporter.ReporterInfo{
-							MetricName:  RepBulkFetching,
-							MetricIndex: cellID,
-						})
+								Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation))
+							}, reporter.ReporterInfo{
+								MetricName:  RepBulkFetching,
+								MetricIndex: cellID,
+							})
+						}
 					}(cellID)
 				}
+
 				wg.Wait()
 			}, reporter.ReporterInfo{
 				MetricName: RepBulkLoop,
 			})
-		}, numTrials)
+		}, 1)
 	})
 }
