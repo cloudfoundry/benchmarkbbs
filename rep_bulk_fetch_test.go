@@ -51,8 +51,7 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 
 								Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation))
 							}, reporter.ReporterInfo{
-								MetricName:  RepBulkFetching,
-								MetricIndex: cellID,
+								MetricName: RepBulkFetching,
 							})
 						}
 					}(cellID)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -51,6 +52,9 @@ func (r *S3Reporter) SpecWillRun(specSummary *ginkgotypes.SpecSummary) {
 
 func (r *S3Reporter) SpecDidComplete(specSummary *ginkgotypes.SpecSummary) {
 	if specSummary.Passed() && specSummary.IsMeasurement {
+		var metricNames []string
+		var measurementData string
+
 		for _, measurement := range specSummary.Measurements {
 			if measurement.Info == nil {
 				panic(fmt.Sprintf("%#v", specSummary))
@@ -76,33 +80,57 @@ func (r *S3Reporter) SpecDidComplete(specSummary *ginkgotypes.SpecSummary) {
 			dataJSON, err := json.Marshal(data)
 			if err != nil {
 				r.logger.Error("failed-marshaling-data", err)
-			}
-
-			var key string
-			if info.MetricIndex != "" {
-				key = info.MetricName + "/" + now.Format(time.RFC3339) + "_" + info.MetricIndex
-			} else {
-				key = info.MetricName + "/" + now.Format(time.RFC3339)
-			}
-			_, err = r.uploader.Upload(&s3manager.UploadInput{
-				Bucket: aws.String(r.bucketName),
-				Key:    aws.String(key),
-				Body:   bytes.NewReader(dataJSON),
-			})
-
-			if err != nil {
-				r.logger.Error("failed-uploading-metrics-to-s3", err)
 				continue
 			}
 
-			r.logger.Debug("successfully-uploaded-metrics-to-s3", lager.Data{
-				"bucket-name": r.bucketName,
-				"key":         key,
-				"content":     dataJSON,
-			})
+			if !foundMetricName(metricNames, info.MetricName) {
+				metricNames = append(metricNames, info.MetricName)
+			}
+
+			if measurementData == "" {
+				measurementData = string(dataJSON)
+			} else {
+				measurementData = fmt.Sprintf("%s\n%s", measurementData, string(dataJSON))
+			}
 		}
+
+		now := time.Now()
+
+		var key string
+		sort.Strings(metricNames)
+		for _, name := range metricNames {
+			key += fmt.Sprintf("%s-", name)
+		}
+		key = fmt.Sprintf("%s/%s", key[:len(key)-1], now.Format(time.RFC3339))
+
+		_, err := r.uploader.Upload(&s3manager.UploadInput{
+			Bucket: aws.String(r.bucketName),
+			Key:    aws.String(key),
+			Body:   bytes.NewReader([]byte(measurementData)),
+		})
+
+		if err != nil {
+			r.logger.Error("failed-uploading-metrics-to-s3", err)
+			return
+		}
+
+		r.logger.Debug("successfully-uploaded-metrics-to-s3", lager.Data{
+			"bucket-name": r.bucketName,
+			"key":         key,
+			"content":     measurementData,
+		})
 	}
 }
 
 func (r *S3Reporter) SpecSuiteDidEnd(summary *ginkgotypes.SuiteSummary) {
+}
+
+func foundMetricName(names []string, key string) bool {
+	for _, name := range names {
+		if name == key {
+			return true
+		}
+	}
+
+	return false
 }
