@@ -96,6 +96,7 @@ func (lo *lrpOperation) Key() string {
 }
 
 func (lo *lrpOperation) Execute() {
+	defer GinkgoRecover()
 	defer atomic.AddInt32(lo.globalCount, 1)
 	var err error
 	randomNum := rand.Intn(100)
