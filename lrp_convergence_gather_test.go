@@ -1,6 +1,8 @@
 package benchmark_bbs_test
 
 import (
+	"time"
+
 	"github.com/cloudfoundry-incubator/bbs/db/etcd"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 	. "github.com/onsi/ginkgo"
@@ -27,6 +29,7 @@ var BenchmarkConvergenceGathering = func(numTrials int) {
 			}, reporter.ReporterInfo{
 				MetricName: ConvergenceGathering,
 			})
+			time.Sleep(30 * time.Second)
 		}, numTrials)
 	})
 }

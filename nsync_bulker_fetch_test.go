@@ -1,6 +1,8 @@
 package benchmark_bbs_test
 
 import (
+	"time"
+
 	"github.com/cloudfoundry-incubator/bbs/models"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 
@@ -22,6 +24,7 @@ var BenchmarkNsyncFetching = func(numTrials int) {
 			}, reporter.ReporterInfo{
 				MetricName: NsyncBulkerFetching,
 			})
+			time.Sleep(30 * time.Second)
 		}, numTrials)
 	})
 }

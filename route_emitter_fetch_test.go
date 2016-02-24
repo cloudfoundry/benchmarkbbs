@@ -1,6 +1,8 @@
 package benchmark_bbs_test
 
 import (
+	"time"
+
 	"github.com/cloudfoundry-incubator/bbs/models"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 
@@ -26,6 +28,7 @@ var BenchmarkRouteEmitterFetching = func(numTrials int) {
 			}, reporter.ReporterInfo{
 				MetricName: FetchActualLRPsAndSchedulingInfos,
 			})
+			time.Sleep(30 * time.Second)
 		}, numTrials)
 	})
 }
