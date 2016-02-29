@@ -66,6 +66,7 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 
 	desiredErrCh := make(chan *stampedError, count)
 	actualErrCh := make(chan *stampedError, count)
+	actualStartErrCh := make(chan *stampedError, count)
 
 	logger.Info("queing-started")
 	for i := 0; i < count; i++ {
@@ -82,12 +83,21 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 			desiredErrCh <- newStampedError(g.bbsClient.DesireLRP(desired), id, "")
 
 			cellID := fmt.Sprintf("cell-%d", rand.Intn(numReps))
+			actualLRPInstanceKey := &models.ActualLRPInstanceKey{InstanceGuid: desired.ProcessGuid + "-i", CellId: cellID}
+
 			actualErrCh <- newStampedError(
 				g.bbsClient.ClaimActualLRP(
 					desired.ProcessGuid,
 					0,
-					&models.ActualLRPInstanceKey{InstanceGuid: desired.ProcessGuid + "-i", CellId: cellID},
+					actualLRPInstanceKey,
 				),
+				id,
+				cellID,
+			)
+
+			netInfo := models.NewActualLRPNetInfo("1.2.3.4", models.NewPortMapping(61999, 8080))
+			actualStartErrCh <- newStampedError(
+				g.bbsClient.StartActualLRP(&models.ActualLRPKey{Domain: desired.Domain, ProcessGuid: desired.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo),
 				id,
 				cellID,
 			)
@@ -104,13 +114,14 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 		wg.Wait()
 		close(desiredErrCh)
 		close(actualErrCh)
+		close(actualStartErrCh)
 	}()
 
-	return g.processResults(logger, desiredErrCh, actualErrCh)
+	return g.processResults(logger, desiredErrCh, actualErrCh, actualStartErrCh)
 }
 
-func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, actualErrCh chan *stampedError) (int, map[string]int, error) {
-	var totalResults, totalActualResults, errorResults, errorActualResults int
+func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, actualErrCh, actualStartErrCh chan *stampedError) (int, map[string]int, error) {
+	var totalResults, totalActualResults, totalStartResults, errorResults, errorActualResults, errorStartResults int
 	actualResults := make(map[string]int)
 
 	for err := range desiredErrCh {
@@ -129,12 +140,21 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, 
 
 		if err.err != nil {
 			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
-			logger.Error("failed-seeding-desired-lrps", newErr)
+			logger.Error("failed-claiming-actual-lrps", newErr)
 			errorActualResults++
 		}
 
 		actualResults[err.cellId]++
 		totalActualResults++
+	}
+
+	for err := range actualStartErrCh {
+		if err.err != nil {
+			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
+			logger.Error("failed-starting-actual-lrp", newErr)
+			errorStartResults++
+		}
+		totalStartResults++
 	}
 
 	errorRate := float64(errorResults) / float64(totalResults)
@@ -159,6 +179,19 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, 
 
 	if actualErrorRate > g.errorTolerance {
 		err := fmt.Errorf("Error rate of %.3f for actuals exceeds tolerance of %.3f", actualErrorRate, g.errorTolerance)
+		logger.Error("failed", err)
+		return 0, nil, err
+	}
+
+	actualStartErrorRate := float64(errorStartResults) / float64(totalStartResults)
+	logger.Info("starting-actuals-complete", lager.Data{
+		"total-results": totalStartResults,
+		"error-results": errorStartResults,
+		"error-rate":    fmt.Sprintf("%.2f", actualStartErrorRate),
+	})
+
+	if actualStartErrorRate > g.errorTolerance {
+		err := fmt.Errorf("Error rate of %.3f for actuals exceeds tolerance of %.3f", actualStartErrorRate, g.errorTolerance)
 		logger.Error("failed", err)
 		return 0, nil, err
 	}

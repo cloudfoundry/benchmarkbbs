@@ -79,14 +79,14 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 			}
 
 			wg.Wait()
-			Eventually(func() int32 { return totalQueued }, 5*time.Second).Should(Equal(totalRan), "should've ran the same number of queued LRP operations")
+			Eventually(func() int32 { return totalRan }, 30*time.Second).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
 		}, 1)
 	})
 }
 
 type lrpOperation struct {
 	actualLRP     *models.ActualLRP
-	percentWrites int
+	percentWrites float64
 	b             Benchmarker
 	globalCount   *int32
 }
@@ -99,25 +99,29 @@ func (lo *lrpOperation) Execute() {
 	defer GinkgoRecover()
 	defer atomic.AddInt32(lo.globalCount, 1)
 	var err error
-	randomNum := rand.Intn(100)
-	isStarting := randomNum < lo.percentWrites
+	randomNum := rand.Float64() * 100.0
+
+	// divided by 2 because the start following the claim cause two writes.
+	percentWrites = (lo.percentWrites / 2)
+
+	isClaiming := randomNum < percentWrites
 	actualLRP := lo.actualLRP
 
-	lo.b.Time(fmt.Sprintf("claim actual LRP"), func() {
-		index := int(actualLRP.ActualLRPKey.Index)
-		err = bbsClient.ClaimActualLRP(actualLRP.ActualLRPKey.ProcessGuid, index, &actualLRP.ActualLRPInstanceKey)
+	lo.b.Time(fmt.Sprintf("start actual LRP"), func() {
+		netInfo := models.NewActualLRPNetInfo("1.2.3.4", models.NewPortMapping(61999, 8080))
+		err = bbsClient.StartActualLRP(&actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
 		Expect(err).NotTo(HaveOccurred())
 	}, reporter.ReporterInfo{
-		MetricName: RepClaimActualLRP,
+		MetricName: RepStartActualLRP,
 	})
 
-	if isStarting {
-		lo.b.Time(fmt.Sprintf("start actual LRP"), func() {
-			netInfo := models.NewActualLRPNetInfo("1.2.3.4", models.NewPortMapping(61999, 8080))
-			err = bbsClient.StartActualLRP(&actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
+	if isClaiming {
+		lo.b.Time(fmt.Sprintf("claim actual LRP"), func() {
+			index := int(actualLRP.ActualLRPKey.Index)
+			err = bbsClient.ClaimActualLRP(actualLRP.ActualLRPKey.ProcessGuid, index, &actualLRP.ActualLRPInstanceKey)
 			Expect(err).NotTo(HaveOccurred())
 		}, reporter.ReporterInfo{
-			MetricName: RepStartActualLRP,
+			MetricName: RepClaimActualLRP,
 		})
 	}
 }

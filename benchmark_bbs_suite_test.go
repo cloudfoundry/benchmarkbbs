@@ -61,7 +61,7 @@ var (
 	numTrials          int
 	numReps            int
 	numPopulateWorkers int
-	percentWrites      int
+	percentWrites      float64
 
 	expectedLRPCount     int
 	expectedLRPVariation float64
@@ -97,7 +97,7 @@ func init() {
 	flag.IntVar(&numReps, "numReps", 10, "number of reps to simulate")
 	flag.IntVar(&numPopulateWorkers, "numPopulateWorkers", 10, "number of workers generating desired LRPs during setup")
 	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of single instance DesiredLRPs to create")
-	flag.IntVar(&percentWrites, "percentWrites", 5, "percentage of actual LRPs to write on each rep bulk loop")
+	flag.Float64Var(&percentWrites, "percentWrites", 5.0, "percentage of actual LRPs to write on each rep bulk loop")
 
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
 	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "BBS client SSL certificate")
