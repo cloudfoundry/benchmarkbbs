@@ -21,7 +21,7 @@ const (
 	RepStartActualLRP = "RepStartActualLRP"
 )
 
-var repBulkCycle = 30
+var repBulkCycle = 30 * time.Second
 
 var BenchmarkRepFetching = func(numReps, numTrials int) {
 	Describe("Fetching for rep bulk loop", func() {
@@ -30,7 +30,11 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 			totalQueued := int32(0)
 			var err error
 			wg := sync.WaitGroup{}
-			queue := operationq.NewSlidingQueue(1)
+			queue := operationq.NewSlidingQueue(numTrials)
+
+			// we need to make sure we don't run out of ports so limit amount of
+			// active http requests to 25000
+			semaphore := make(chan struct{}, 25000)
 
 			for i := 0; i < numReps; i++ {
 				cellID := fmt.Sprintf("cell-%d", i)
@@ -40,9 +44,9 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 					defer wg.Done()
 
 					for j := 0; j < numTrials; j++ {
-						sleepDuration := 30 * time.Second
+						sleepDuration := repBulkCycle
 						if j == 0 {
-							numMilli := rand.Intn(30000)
+							numMilli := rand.Intn(int(repBulkCycle.Nanoseconds() / 1000000))
 							sleepDuration = time.Duration(numMilli) * time.Millisecond
 						}
 						time.Sleep(sleepDuration)
@@ -51,7 +55,9 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 							defer GinkgoRecover()
 							var actuals []*models.ActualLRPGroup
 							b.Time("rep bulk fetch", func() {
+								semaphore <- struct{}{}
 								actuals, err = bbsClient.ActualLRPGroups(models.ActualLRPFilter{CellID: cellID})
+								<-semaphore
 								Expect(err).NotTo(HaveOccurred())
 							}, reporter.ReporterInfo{
 								MetricName: RepBulkFetching,
@@ -69,7 +75,7 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 							for k := 0; k < numActuals; k++ {
 								actualLRP, _ := actuals[k].Resolve()
 								atomic.AddInt32(&totalQueued, 1)
-								queue.Push(&lrpOperation{actualLRP, percentWrites, b, &totalRan})
+								queue.Push(&lrpOperation{actualLRP, percentWrites, b, &totalRan, semaphore})
 							}
 						}, reporter.ReporterInfo{
 							MetricName: RepBulkLoop,
@@ -79,7 +85,7 @@ var BenchmarkRepFetching = func(numReps, numTrials int) {
 			}
 
 			wg.Wait()
-			Eventually(func() int32 { return totalRan }, 30*time.Second).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
+			Eventually(func() int32 { return totalRan }, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
 		}, 1)
 	})
 }
@@ -89,6 +95,7 @@ type lrpOperation struct {
 	percentWrites float64
 	b             Benchmarker
 	globalCount   *int32
+	semaphore     chan struct{}
 }
 
 func (lo *lrpOperation) Key() string {
@@ -102,23 +109,25 @@ func (lo *lrpOperation) Execute() {
 	randomNum := rand.Float64() * 100.0
 
 	// divided by 2 because the start following the claim cause two writes.
-	percentWrites = (lo.percentWrites / 2)
-
-	isClaiming := randomNum < percentWrites
+	isClaiming := randomNum < (lo.percentWrites / 2)
 	actualLRP := lo.actualLRP
 
-	lo.b.Time(fmt.Sprintf("start actual LRP"), func() {
+	lo.b.Time("start actual LRP", func() {
 		netInfo := models.NewActualLRPNetInfo("1.2.3.4", models.NewPortMapping(61999, 8080))
+		lo.semaphore <- struct{}{}
 		err = bbsClient.StartActualLRP(&actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
+		<-lo.semaphore
 		Expect(err).NotTo(HaveOccurred())
 	}, reporter.ReporterInfo{
 		MetricName: RepStartActualLRP,
 	})
 
 	if isClaiming {
-		lo.b.Time(fmt.Sprintf("claim actual LRP"), func() {
+		lo.b.Time("claim actual LRP", func() {
 			index := int(actualLRP.ActualLRPKey.Index)
+			lo.semaphore <- struct{}{}
 			err = bbsClient.ClaimActualLRP(actualLRP.ActualLRPKey.ProcessGuid, index, &actualLRP.ActualLRPInstanceKey)
+			<-lo.semaphore
 			Expect(err).NotTo(HaveOccurred())
 		}, reporter.ReporterInfo{
 			MetricName: RepClaimActualLRP,

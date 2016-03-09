@@ -419,7 +419,7 @@ func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration
 	}
 
 	cf_http.Initialize(bbsClientHTTPTimeout)
-	bbsClient, err := bbs.NewSecureSkipVerifyClient(bbsAddress, bbsClientCert, bbsClientKey, 1, 1)
+	bbsClient, err := bbs.NewSecureSkipVerifyClient(bbsAddress, bbsClientCert, bbsClientKey, 1, 25000)
 	if err != nil {
 		logger.Fatal("Failed to configure secure BBS client", err)
 	}
