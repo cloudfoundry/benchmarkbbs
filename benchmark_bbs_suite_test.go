@@ -405,7 +405,7 @@ func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCD
 	}
 	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
 
-	return etcddb.NewETCD(format.ENCRYPTED_PROTO, 1000, 1000, 1*time.Minute, cryptor, etcddb.NewStoreClient(etcdClient), nil, nil, clock.NewClock(), nil, nil)
+	return etcddb.NewETCD(format.ENCRYPTED_PROTO, 1000, 1000, 1*time.Minute, cryptor, etcddb.NewStoreClient(etcdClient), clock.NewClock())
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.Client {
