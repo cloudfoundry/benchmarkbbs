@@ -3,6 +3,7 @@ package benchmark_bbs_test
 import (
 	"crypto/rand"
 	"crypto/tls"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -22,9 +23,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/cloudfoundry-incubator/bbs"
+	"github.com/cloudfoundry-incubator/bbs/db"
 	etcddb "github.com/cloudfoundry-incubator/bbs/db/etcd"
+	"github.com/cloudfoundry-incubator/bbs/db/sqldb"
 	"github.com/cloudfoundry-incubator/bbs/encryption"
 	"github.com/cloudfoundry-incubator/bbs/format"
+	"github.com/cloudfoundry-incubator/bbs/guidprovider"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 	"github.com/cloudfoundry-incubator/cf_http"
@@ -33,6 +37,7 @@ import (
 	"github.com/pivotal-golang/lager"
 	"github.com/zorkian/go-datadog-api"
 
+	_ "github.com/go-sql-driver/mysql"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -74,9 +79,13 @@ var (
 	logLevel    string
 	logFilename string
 
+	databaseConnectionString string
+
 	logger               lager.Logger
 	etcdClient           *etcd.Client
 	etcdDB               *etcddb.ETCDDB
+	sqlDB                *sqldb.SQLDB
+	activeDB             db.DB
 	bbsClient            bbs.Client
 	bbsClientHTTPTimeout time.Duration
 	dataDogClient        *datadog.Client
@@ -98,6 +107,8 @@ func init() {
 	flag.IntVar(&numPopulateWorkers, "numPopulateWorkers", 10, "number of workers generating desired LRPs during setup")
 	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of single instance DesiredLRPs to create")
 	flag.Float64Var(&percentWrites, "percentWrites", 5.0, "percentage of actual LRPs to write on each rep bulk loop")
+
+	flag.StringVar(&databaseConnectionString, "databaseConnectionString", "", "Connection string for a MySQL database")
 
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
 	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "BBS client SSL certificate")
@@ -201,9 +212,27 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	etcdClient = initializeEtcdClient(logger, etcdOptions)
 	bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
 	etcdDB = initializeETCDDB(logger, etcdClient)
+	activeDB = etcdDB
 
-	purge("/v1/desired_lrp")
-	purge("/v1/actual")
+	if databaseConnectionString == "" {
+		purge("/v1/desired_lrp")
+		purge("/v1/actual")
+	} else {
+		sqlConn, err := sql.Open("mysql", databaseConnectionString)
+		if err != nil {
+			logger.Fatal("failed-to-open-sql", err)
+		}
+		sqlConn.SetMaxOpenConns(1)
+
+		err = sqlConn.Ping()
+		Expect(err).NotTo(HaveOccurred())
+		_, err = sqlConn.Exec("TRUNCATE actual_lrps")
+		Expect(err).NotTo(HaveOccurred())
+		_, err = sqlConn.Exec("TRUNCATE desired_lrps")
+		Expect(err).NotTo(HaveOccurred())
+		sqlDB = initializeSQLDB(logger, sqlConn)
+		activeDB = sqlDB
+	}
 
 	_, err = bbsClient.Domains()
 	Expect(err).NotTo(HaveOccurred())
@@ -406,6 +435,20 @@ func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCD
 	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
 
 	return etcddb.NewETCD(format.ENCRYPTED_PROTO, 1000, 1000, 1*time.Minute, cryptor, etcddb.NewStoreClient(etcdClient), clock.NewClock())
+}
+
+func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
+	key, keys, err := encryptionFlags.Parse()
+	if err != nil {
+		logger.Fatal("cannot-setup-encryption", err)
+	}
+	keyManager, err := encryption.NewKeyManager(key, keys)
+	if err != nil {
+		logger.Fatal("cannot-setup-encryption", err)
+	}
+	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
+
+	return sqldb.NewSQLDB(sqlConn, 1000, 1000, format.ENCODED_PROTO, cryptor, guidprovider.DefaultGuidProvider, clock.NewClock())
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.Client {
