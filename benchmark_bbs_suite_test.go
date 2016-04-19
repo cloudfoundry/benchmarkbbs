@@ -206,17 +206,18 @@ type expectedLRPCounts struct {
 }
 
 var _ = SynchronizedBeforeSuite(func() []byte {
-	etcdOptions, err := etcdFlags.Validate()
-	Expect(err).NotTo(HaveOccurred())
-
-	etcdClient = initializeEtcdClient(logger, etcdOptions)
 	bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
-	etcdDB = initializeETCDDB(logger, etcdClient)
-	activeDB = etcdDB
 
 	if databaseConnectionString == "" {
-		purge("/v1/desired_lrp")
-		purge("/v1/actual")
+		etcdOptions, err := etcdFlags.Validate()
+		Expect(err).NotTo(HaveOccurred())
+
+		etcdClient = initializeEtcdClient(logger, etcdOptions)
+		etcdDB = initializeETCDDB(logger, etcdClient)
+
+		cleanupETCD()
+
+		activeDB = etcdDB
 	} else {
 		sqlConn, err := sql.Open("mysql", databaseConnectionString)
 		if err != nil {
@@ -226,15 +227,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 		err = sqlConn.Ping()
 		Expect(err).NotTo(HaveOccurred())
-		_, err = sqlConn.Exec("TRUNCATE actual_lrps")
-		Expect(err).NotTo(HaveOccurred())
-		_, err = sqlConn.Exec("TRUNCATE desired_lrps")
-		Expect(err).NotTo(HaveOccurred())
+
 		sqlDB = initializeSQLDB(logger, sqlConn)
+		cleanupSQLDB(sqlConn)
 		activeDB = sqlDB
 	}
 
-	_, err = bbsClient.Domains()
+	_, err := bbsClient.Domains()
 	Expect(err).NotTo(HaveOccurred())
 
 	var expectedDesiredLRPCount int
@@ -275,12 +274,27 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	expectedActualLRPCounts = expectedLRPCounts.ActualLRPCounts
 	expectedActualLRPVariations = expectedLRPCounts.ActualLRPVariations
 
-	if etcdClient == nil {
+	if databaseConnectionString == "" {
 		etcdOptions, err := etcdFlags.Validate()
 		Expect(err).NotTo(HaveOccurred())
+
 		etcdClient = initializeEtcdClient(logger, etcdOptions)
-		bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
 		etcdDB = initializeETCDDB(logger, etcdClient)
+
+		activeDB = etcdDB
+	} else {
+		sqlConn, err := sql.Open("mysql", databaseConnectionString)
+		if err != nil {
+			logger.Fatal("failed-to-open-sql", err)
+		}
+		sqlConn.SetMaxOpenConns(1)
+
+		err = sqlConn.Ping()
+		Expect(err).NotTo(HaveOccurred())
+
+		sqlDB = initializeSQLDB(logger, sqlConn)
+
+		activeDB = sqlDB
 	}
 })
 
@@ -480,4 +494,16 @@ func purge(key string) {
 			Fail(err.Error())
 		}
 	}
+}
+
+func cleanupETCD() {
+	purge("/v1/desired_lrp")
+	purge("/v1/actual")
+}
+
+func cleanupSQLDB(conn *sql.DB) {
+	_, err := conn.Exec("TRUNCATE actual_lrps")
+	Expect(err).NotTo(HaveOccurred())
+	_, err = conn.Exec("TRUNCATE desired_lrps")
+	Expect(err).NotTo(HaveOccurred())
 }
