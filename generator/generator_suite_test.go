@@ -37,7 +37,7 @@ var etcdClient *etcdclient.Client
 
 var logger lager.Logger
 
-var bbsClient bbs.Client
+var bbsClient bbs.InternalClient
 var bbsBinPath string
 var bbsAddress string
 var bbsURL *url.URL

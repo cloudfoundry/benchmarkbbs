@@ -17,7 +17,7 @@ import (
 type DesiredLRPGenerator struct {
 	errorTolerance float64
 	metricPrefix   string
-	bbsClient      bbs.Client
+	bbsClient      bbs.InternalClient
 	datadogClient  *datadog.Client
 	workPool       *workpool.WorkPool
 }
@@ -26,7 +26,7 @@ func NewDesiredLRPGenerator(
 	errTolerance float64,
 	metricPrefix string,
 	workpoolSize int,
-	bbsClient bbs.Client,
+	bbsClient bbs.InternalClient,
 	datadogClient *datadog.Client,
 ) *DesiredLRPGenerator {
 	workPool, err := workpool.NewWorkPool(workpoolSize)

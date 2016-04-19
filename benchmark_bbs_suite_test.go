@@ -86,7 +86,7 @@ var (
 	etcdDB               *etcddb.ETCDDB
 	sqlDB                *sqldb.SQLDB
 	activeDB             db.DB
-	bbsClient            bbs.Client
+	bbsClient            bbs.InternalClient
 	bbsClientHTTPTimeout time.Duration
 	dataDogClient        *datadog.Client
 	dataDogReporter      reporter.DataDogReporter
@@ -451,7 +451,7 @@ func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
 	return sqldb.NewSQLDB(sqlConn, 1000, 1000, format.ENCODED_PROTO, cryptor, guidprovider.DefaultGuidProvider, clock.NewClock())
 }
 
-func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.Client {
+func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.InternalClient {
 	bbsURL, err := url.Parse(bbsAddress)
 	if err != nil {
 		logger.Fatal("Invalid BBS URL", err)
