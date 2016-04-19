@@ -302,8 +302,19 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 var _ = SynchronizedAfterSuite(func() {
 }, func() {
-	purge("/v1/desired_lrp")
-	purge("/v1/actual")
+	if databaseConnectionString == "" {
+		cleanupETCD()
+	} else {
+		sqlConn, err := sql.Open("mysql", databaseConnectionString)
+		if err != nil {
+			logger.Fatal("failed-to-open-sql", err)
+		}
+		sqlConn.SetMaxOpenConns(1)
+
+		err = sqlConn.Ping()
+		Expect(err).NotTo(HaveOccurred())
+		cleanupSQLDB(sqlConn)
+	}
 })
 
 type ETCDFlags struct {
