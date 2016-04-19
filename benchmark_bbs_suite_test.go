@@ -274,6 +274,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	expectedActualLRPCounts = expectedLRPCounts.ActualLRPCounts
 	expectedActualLRPVariations = expectedLRPCounts.ActualLRPVariations
 
+	bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
+
 	if databaseConnectionString == "" {
 		etcdOptions, err := etcdFlags.Validate()
 		Expect(err).NotTo(HaveOccurred())
