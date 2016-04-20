@@ -12,7 +12,7 @@ bosh stop brain_z1 0
 Run ginkgo:
 
 ```
-ginkgo -nodes=4 -- \
+ginkgo -- \
   -desiredLRPs=5000 \
   -numTrials=10 \
   -numReps=5 \

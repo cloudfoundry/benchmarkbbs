@@ -53,10 +53,6 @@ func newStampedError(err error, guid, cellId string) *stampedError {
 	return &stampedError{err, guid, cellId, time.Now()}
 }
 
-func newErrDataPoint(err *stampedError) datadog.DataPoint {
-	return datadog.DataPoint{float64(err.Unix()), 1}
-}
-
 func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) (int, map[string]int, error) {
 	logger = logger.Session("generate-desired-lrp", lager.Data{"count": count})
 
@@ -117,12 +113,16 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 		close(actualStartErrCh)
 	}()
 
-	return g.processResults(logger, desiredErrCh, actualErrCh, actualStartErrCh)
+	return g.processResults(logger, desiredErrCh, actualErrCh, actualStartErrCh, numReps)
 }
 
-func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, actualErrCh, actualStartErrCh chan *stampedError) (int, map[string]int, error) {
+func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, actualErrCh, actualStartErrCh chan *stampedError, numReps int) (int, map[string]int, error) {
 	var totalResults, totalActualResults, totalStartResults, errorResults, errorActualResults, errorStartResults int
 	actualResults := make(map[string]int)
+	for i := 0; i < numReps; i++ {
+		cellID := fmt.Sprintf("cell-%d", i)
+		actualResults[cellID] = 0
+	}
 
 	for err := range desiredErrCh {
 		if err.err != nil {

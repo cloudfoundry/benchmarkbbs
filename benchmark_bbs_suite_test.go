@@ -137,10 +137,7 @@ func init() {
 		log.Fatal("bbsAddress is required")
 	}
 
-	BenchmarkConvergenceGathering(numTrials)
-	BenchmarkNsyncFetching(numTrials)
-	BenchmarkRouteEmitterFetching(numTrials)
-	BenchmarkRepFetching(numReps, numTrials)
+	BenchmarkTests(numReps, numTrials)
 }
 
 func TestBenchmarkBbs(t *testing.T) {
