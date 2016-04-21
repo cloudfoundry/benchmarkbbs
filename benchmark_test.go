@@ -32,7 +32,7 @@ var eventCount int32 = 0
 var claimCount int32 = 0
 
 var BenchmarkTests = func(numReps, numTrials int) {
-	FDescribe("main benchmark test", func() {
+	Describe("main benchmark test", func() {
 
 		eventCountRunner := func(signals <-chan os.Signal, ready chan<- struct{}) error {
 			eventSource, err := bbsClient.SubscribeToEvents()
