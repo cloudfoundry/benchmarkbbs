@@ -79,11 +79,12 @@ var BenchmarkTests = func(numReps, numTrials int) {
 			ginkgomon.Kill(process)
 		})
 
-		Measure("data for benchamrks", func(b Benchmarker) {
+		Measure("data for benchmarks", func(b Benchmarker) {
 			wg := sync.WaitGroup{}
 
 			// start nsync
 			go func() {
+				defer GinkgoRecover()
 				logger.Info("start-nsync-bulker-loop")
 				defer logger.Info("finish-nsync-bulker-loop")
 				wg.Add(1)
@@ -94,7 +95,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 					b.Time("fetch all desired LRP scheduling info", func() {
 						desireds, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
 						Expect(err).NotTo(HaveOccurred())
-						Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation))
+						Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in Nsync Bulk Loop")
 					}, reporter.ReporterInfo{
 						MetricName: NsyncBulkerFetching,
 					})
@@ -103,6 +104,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 
 			// start convergence
 			go func() {
+				defer GinkgoRecover()
 				logger.Info("start-lrp-convergence-loop")
 				defer logger.Info("finish-lrp-convergence-loop")
 				wg.Add(1)
@@ -127,6 +129,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 
 			// start route-emitter
 			go func() {
+				defer GinkgoRecover()
 				logger.Info("start-route-emitter-loop")
 				defer logger.Info("finish-route-emitter-loop")
 				wg.Add(1)
@@ -137,11 +140,11 @@ var BenchmarkTests = func(numReps, numTrials int) {
 					b.Time("fetch all actualLRPs", func() {
 						actuals, err := bbsClient.ActualLRPGroups(models.ActualLRPFilter{})
 						Expect(err).NotTo(HaveOccurred())
-						Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation))
+						Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
 
 						desireds, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
 						Expect(err).NotTo(HaveOccurred())
-						Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation))
+						Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in route-emitter")
 					}, reporter.ReporterInfo{
 						MetricName: FetchActualLRPsAndSchedulingInfos,
 					})
@@ -162,6 +165,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 				wg.Add(1)
 
 				go func(cellID string) {
+					defer GinkgoRecover()
 					defer wg.Done()
 
 					for j := 0; j < numTrials; j++ {
@@ -186,7 +190,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 							expectedActualLRPVariation, ok := expectedActualLRPVariations[cellID]
 							Expect(ok).To(BeTrue())
 
-							Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation))
+							Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation), "Number of ActualLRPs retrieved by cell %s in rep bulk loop", cellID)
 
 							numActuals := len(actuals)
 							for k := 0; k < numActuals; k++ {
@@ -204,7 +208,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 			wg.Wait()
 
 			eventTolerance := float64(claimCount) * errorTolerance
-			Eventually(func() int32 { return eventCount }, 2*time.Minute).Should(BeNumerically("~", claimCount, eventTolerance))
+			Eventually(func() int32 { return eventCount }, 2*time.Minute).Should(BeNumerically("~", claimCount, eventTolerance), "events received")
 			Eventually(func() int32 { return totalRan }, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
 		}, 1)
 	})
