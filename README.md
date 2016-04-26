@@ -30,6 +30,27 @@ ginkgo -- \
   -logLevel=info
 ```
 
+### MySQL Backend
+To test with the experimental MySQL backend you need to pass the -databaseConnectionString
+parameter for example:
+
+```
+ginkgo -- \
+  -desiredLRPs=5000 \
+  -numTrials=10 \
+  -numReps=5 \
+  -numPopulateWorkers=10 \
+  -bbsAddress=https://10.244.16.2:8889 \
+  -bbsClientHTTPTimeout=10s \
+  -databaseConnectionString="diego:diego@tcp(10.244.7.2:3306)/diego" \
+  -bbsClientCert=$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt \
+  -bbsClientKey=$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key \
+  -encryptionKey="key1:a secure passphrase" \
+  -activeKeyLabel=key1 \
+  -logFilename=test-output.log \
+  -logLevel=info
+```
+
 ### Metrics
 
 If you'd like to have metrics emitted to DataDog, add the following flags:
