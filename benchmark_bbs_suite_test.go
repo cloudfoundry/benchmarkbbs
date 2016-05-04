@@ -230,7 +230,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		activeDB = sqlDB
 	}
 
-	_, err := bbsClient.Domains()
+	_, err := bbsClient.Domains(logger)
 	Expect(err).NotTo(HaveOccurred())
 
 	var expectedDesiredLRPCount int

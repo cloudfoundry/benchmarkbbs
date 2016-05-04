@@ -35,7 +35,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 	Describe("main benchmark test", func() {
 
 		eventCountRunner := func(signals <-chan os.Signal, ready chan<- struct{}) error {
-			eventSource, err := bbsClient.SubscribeToEvents()
+			eventSource, err := bbsClient.SubscribeToEvents(logger)
 			Expect(err).NotTo(HaveOccurred())
 			close(ready)
 
@@ -93,7 +93,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 					sleepDuration := getSleepDuration(i, bulkCycle)
 					time.Sleep(sleepDuration)
 					b.Time("fetch all desired LRP scheduling info", func() {
-						desireds, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
+						desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
 						Expect(err).NotTo(HaveOccurred())
 						Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in Nsync Bulk Loop")
 					}, reporter.ReporterInfo{
@@ -138,11 +138,11 @@ var BenchmarkTests = func(numReps, numTrials int) {
 					sleepDuration := getSleepDuration(i, bulkCycle)
 					time.Sleep(sleepDuration)
 					b.Time("fetch all actualLRPs", func() {
-						actuals, err := bbsClient.ActualLRPGroups(models.ActualLRPFilter{})
+						actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{})
 						Expect(err).NotTo(HaveOccurred())
 						Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
 
-						desireds, err := bbsClient.DesiredLRPSchedulingInfos(models.DesiredLRPFilter{})
+						desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
 						Expect(err).NotTo(HaveOccurred())
 						Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in route-emitter")
 					}, reporter.ReporterInfo{
@@ -177,7 +177,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 							var actuals []*models.ActualLRPGroup
 							b.Time("rep bulk fetch", func() {
 								semaphore <- struct{}{}
-								actuals, err = bbsClient.ActualLRPGroups(models.ActualLRPFilter{CellID: cellID})
+								actuals, err = bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{CellID: cellID})
 								<-semaphore
 								Expect(err).NotTo(HaveOccurred())
 							}, reporter.ReporterInfo{
@@ -240,7 +240,7 @@ func (lo *lrpOperation) Execute() {
 	lo.b.Time("start actual LRP", func() {
 		netInfo := models.NewActualLRPNetInfo("1.2.3.4", models.NewPortMapping(61999, 8080))
 		lo.semaphore <- struct{}{}
-		err = bbsClient.StartActualLRP(&actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
+		err = bbsClient.StartActualLRP(logger, &actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
 		<-lo.semaphore
 		Expect(err).NotTo(HaveOccurred())
 		if actualLRP.State == models.ActualLRPStateClaimed {
@@ -254,7 +254,7 @@ func (lo *lrpOperation) Execute() {
 		lo.b.Time("claim actual LRP", func() {
 			index := int(actualLRP.ActualLRPKey.Index)
 			lo.semaphore <- struct{}{}
-			err = bbsClient.ClaimActualLRP(actualLRP.ActualLRPKey.ProcessGuid, index, &actualLRP.ActualLRPInstanceKey)
+			err = bbsClient.ClaimActualLRP(logger, actualLRP.ActualLRPKey.ProcessGuid, index, &actualLRP.ActualLRPInstanceKey)
 			<-lo.semaphore
 			Expect(err).NotTo(HaveOccurred())
 			defer atomic.AddInt32(lo.globalClaimCount, 1)
