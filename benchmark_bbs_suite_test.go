@@ -472,7 +472,7 @@ func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
 	}
 	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
 
-	return sqldb.NewSQLDB(sqlConn, 1000, 1000, format.ENCODED_PROTO, cryptor, guidprovider.DefaultGuidProvider, clock.NewClock())
+	return sqldb.NewSQLDB(sqlConn, 1000, 1000, format.ENCODED_PROTO, cryptor, guidprovider.DefaultGuidProvider, clock.NewClock(), "mysql")
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.InternalClient {
