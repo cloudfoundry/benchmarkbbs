@@ -94,14 +94,12 @@ func (r *S3Reporter) SpecDidComplete(specSummary *ginkgotypes.SpecSummary) {
 			}
 		}
 
-		now := time.Now()
-
 		var key string
 		sort.Strings(metricNames)
 		for _, name := range metricNames {
 			key += fmt.Sprintf("%s-", name)
 		}
-		key = fmt.Sprintf("%s/%s", key[:len(key)-1], now.Format(time.RFC3339))
+		key = key[:len(key)-1]
 
 		_, err := r.uploader.Upload(&s3manager.UploadInput{
 			Bucket: aws.String(r.bucketName),
