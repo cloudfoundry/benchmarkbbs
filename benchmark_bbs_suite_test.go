@@ -222,6 +222,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			logger.Fatal("failed-to-open-sql", err)
 		}
 		sqlConn.SetMaxOpenConns(1)
+		sqlConn.SetMaxIdleConns(1)
 
 		err = sqlConn.Ping()
 		Expect(err).NotTo(HaveOccurred())
@@ -288,6 +289,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			logger.Fatal("failed-to-open-sql", err)
 		}
 		sqlConn.SetMaxOpenConns(1)
+		sqlConn.SetMaxIdleConns(1)
 
 		err = sqlConn.Ping()
 		Expect(err).NotTo(HaveOccurred())
@@ -308,6 +310,7 @@ var _ = SynchronizedAfterSuite(func() {
 			logger.Fatal("failed-to-open-sql", err)
 		}
 		sqlConn.SetMaxOpenConns(1)
+		sqlConn.SetMaxIdleConns(1)
 
 		err = sqlConn.Ping()
 		Expect(err).NotTo(HaveOccurred())
