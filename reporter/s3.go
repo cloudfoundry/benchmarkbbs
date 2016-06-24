@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -38,7 +37,10 @@ type Data struct {
 	Measurement ginkgotypes.SpecMeasurement
 }
 
+var startTime string
+
 func (r *S3Reporter) SpecSuiteWillBegin(config config.GinkgoConfigType, summary *ginkgotypes.SuiteSummary) {
+	startTime = time.Now().Format(time.RFC3339)
 }
 
 func (r *S3Reporter) BeforeSuiteDidRun(setupSummary *ginkgotypes.SetupSummary) {
@@ -52,9 +54,6 @@ func (r *S3Reporter) SpecWillRun(specSummary *ginkgotypes.SpecSummary) {
 
 func (r *S3Reporter) SpecDidComplete(specSummary *ginkgotypes.SpecSummary) {
 	if specSummary.Passed() && specSummary.IsMeasurement {
-		var metricNames []string
-		var measurementData string
-
 		for _, measurement := range specSummary.Measurements {
 			if measurement.Info == nil {
 				panic(fmt.Sprintf("%#v", specSummary))
@@ -83,52 +82,28 @@ func (r *S3Reporter) SpecDidComplete(specSummary *ginkgotypes.SpecSummary) {
 				continue
 			}
 
-			if !foundMetricName(metricNames, info.MetricName) {
-				metricNames = append(metricNames, info.MetricName)
+			measurementData := string(dataJSON)
+			key := fmt.Sprintf("%s/%s-%s", startTime, info.MetricName, now.Format(time.RFC3339))
+
+			_, err = r.uploader.Upload(&s3manager.UploadInput{
+				Bucket: aws.String(r.bucketName),
+				Key:    aws.String(key),
+				Body:   bytes.NewReader([]byte(measurementData)),
+			})
+
+			if err != nil {
+				r.logger.Error("failed-uploading-metric-to-s3", err)
+				continue
 			}
 
-			if measurementData == "" {
-				measurementData = string(dataJSON)
-			} else {
-				measurementData = fmt.Sprintf("%s\n%s", measurementData, string(dataJSON))
-			}
+			r.logger.Debug("successfully-uploaded-metric-to-s3", lager.Data{
+				"bucket-name": r.bucketName,
+				"key":         key,
+				"content":     measurementData,
+			})
 		}
-
-		var key string
-		sort.Strings(metricNames)
-		for _, name := range metricNames {
-			key += fmt.Sprintf("%s-", name)
-		}
-		key = key[:len(key)-1]
-
-		_, err := r.uploader.Upload(&s3manager.UploadInput{
-			Bucket: aws.String(r.bucketName),
-			Key:    aws.String(key),
-			Body:   bytes.NewReader([]byte(measurementData)),
-		})
-
-		if err != nil {
-			r.logger.Error("failed-uploading-metrics-to-s3", err)
-			return
-		}
-
-		r.logger.Debug("successfully-uploaded-metrics-to-s3", lager.Data{
-			"bucket-name": r.bucketName,
-			"key":         key,
-			"content":     measurementData,
-		})
 	}
 }
 
 func (r *S3Reporter) SpecSuiteDidEnd(summary *ginkgotypes.SuiteSummary) {
-}
-
-func foundMetricName(names []string, key string) bool {
-	for _, name := range names {
-		if name == key {
-			return true
-		}
-	}
-
-	return false
 }

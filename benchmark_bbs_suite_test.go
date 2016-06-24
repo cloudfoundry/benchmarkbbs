@@ -180,7 +180,6 @@ func TestBenchmarkBbs(t *testing.T) {
 	}
 
 	if awsAccessKeyID != "" && awsSecretAccessKey != "" && awsBucketName != "" {
-		awsBucketName = fmt.Sprintf("%s/%s", awsBucketName, time.Now().Format(time.RFC3339))
 		creds := credentials.NewStaticCredentials(awsAccessKeyID, awsSecretAccessKey, "")
 		s3Client := s3.New(&aws.Config{
 			Region:      &awsRegion,
