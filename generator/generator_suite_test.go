@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cloudfoundry-incubator/bbs"
-	"github.com/cloudfoundry-incubator/bbs/cmd/bbs/testrunner"
-	"github.com/cloudfoundry-incubator/bbs/db/etcd/test/etcd_helpers"
+	"code.cloudfoundry.org/bbs"
+	"code.cloudfoundry.org/bbs/cmd/bbs/testrunner"
+	"code.cloudfoundry.org/bbs/db/etcd/test/etcd_helpers"
 	"github.com/cloudfoundry-incubator/consuladapter/consulrunner"
 	"github.com/cloudfoundry/storeadapter/storerunner/etcdstorerunner"
 	etcdclient "github.com/coreos/go-etcd/etcd"
@@ -56,7 +56,7 @@ func TestGenerator(t *testing.T) {
 var _ = SynchronizedBeforeSuite(
 	func() []byte {
 		os.Setenv("GOMAXPROCS", strconv.Itoa(runtime.NumCPU()))
-		bbsConfig, err := gexec.Build("github.com/cloudfoundry-incubator/bbs/cmd/bbs", "-race")
+		bbsConfig, err := gexec.Build("code.cloudfoundry.org/bbs/cmd/bbs", "-race")
 		Expect(err).NotTo(HaveOccurred())
 		return []byte(bbsConfig)
 	},

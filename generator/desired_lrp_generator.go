@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudfoundry-incubator/bbs"
-	"github.com/cloudfoundry-incubator/bbs/models"
+	"code.cloudfoundry.org/bbs"
+	"code.cloudfoundry.org/bbs/models"
 	"github.com/cloudfoundry/gunk/workpool"
 	"github.com/pivotal-golang/lager"
 	"github.com/zorkian/go-datadog-api"

@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cloudfoundry-incubator/bbs/models"
+	"code.cloudfoundry.org/bbs/models"
 	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
