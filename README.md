@@ -1,5 +1,7 @@
 ## BBS Benchmark
 
+**Note**: This repository should be imported as `code.cloudfoundry.org/benchmarkbbs`.
+
 ### Running the Tests
 
 To run the BBS benchmarks against [BOSH Lite](https://github.com/cloudfoundry/bosh-lite):
