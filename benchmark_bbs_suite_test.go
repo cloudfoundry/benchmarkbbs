@@ -1,4 +1,4 @@
-package benchmark_bbs_test
+package benchmarkbbs_test
 
 import (
 	"crypto/rand"
@@ -25,12 +25,12 @@ import (
 	"code.cloudfoundry.org/bbs/encryption"
 	"code.cloudfoundry.org/bbs/format"
 	"code.cloudfoundry.org/bbs/guidprovider"
+	"code.cloudfoundry.org/benchmarkbbs/generator"
+	"code.cloudfoundry.org/benchmarkbbs/reporter"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/cloudfoundry-incubator/benchmark-bbs/generator"
-	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
 	"github.com/cloudfoundry-incubator/cf_http"
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/pivotal-golang/clock"

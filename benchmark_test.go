@@ -1,4 +1,4 @@
-package benchmark_bbs_test
+package benchmarkbbs_test
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/bbs/models"
-	"github.com/cloudfoundry-incubator/benchmark-bbs/reporter"
+	"code.cloudfoundry.org/benchmarkbbs/reporter"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/pivotal-golang/operationq"
