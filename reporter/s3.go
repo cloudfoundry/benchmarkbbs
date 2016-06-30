@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"time"
 
+	"code.cloudfoundry.org/lager"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/onsi/ginkgo/config"
 	ginkgotypes "github.com/onsi/ginkgo/types"
-	"github.com/pivotal-golang/lager"
 )
 
 type S3Reporter struct {

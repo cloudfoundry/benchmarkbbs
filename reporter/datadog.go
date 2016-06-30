@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"code.cloudfoundry.org/lager"
 	"github.com/onsi/ginkgo/config"
 	"github.com/onsi/ginkgo/types"
-	"github.com/pivotal-golang/lager"
 	"github.com/zorkian/go-datadog-api"
 )
 

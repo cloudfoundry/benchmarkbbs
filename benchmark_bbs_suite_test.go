@@ -29,12 +29,12 @@ import (
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
 	"code.cloudfoundry.org/cfhttp"
 	"code.cloudfoundry.org/clock"
+	"code.cloudfoundry.org/lager"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/coreos/go-etcd/etcd"
-	"github.com/pivotal-golang/lager"
 	"github.com/zorkian/go-datadog-api"
 
 	_ "github.com/go-sql-driver/mysql"
