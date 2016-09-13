@@ -59,6 +59,30 @@ ginkgo -- \
   -bbsAddress=https://10.244.16.2:8889 \
   -bbsClientHTTPTimeout=10s \
   -databaseConnectionString="diego:diego@tcp(10.244.7.2:3306)/diego" \
+  -databaseDriver="mysql" \
+  -bbsClientCert=$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt \
+  -bbsClientKey=$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key \
+  -encryptionKey="key1:a secure passphrase" \
+  -activeKeyLabel=key1 \
+  -logFilename=test-output.log \
+  -logLevel=info
+```
+
+### Postgres Backend
+
+To test with the experimental postgres backend, add the `-databaseConnectionString`
+flag instead of the flags that start with `etcd`. For example:
+
+```
+ginkgo -- \
+  -desiredLRPs=5000 \
+  -numTrials=10 \
+  -numReps=5 \
+  -numPopulateWorkers=10 \
+  -bbsAddress=https://10.244.16.2:8889 \
+  -bbsClientHTTPTimeout=10s \
+  -databaseConnectionString="postgres://diego:admin@10.244.0.30:5524/diego" \
+  -databaseDriver="postgres" \
   -bbsClientCert=$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt \
   -bbsClientKey=$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key \
   -encryptionKey="key1:a secure passphrase" \

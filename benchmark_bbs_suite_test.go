@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -80,6 +79,7 @@ var (
 	logFilename string
 
 	databaseConnectionString string
+	databaseDriver           string
 
 	logger               lager.Logger
 	etcdClient           *etcd.Client
@@ -109,6 +109,7 @@ func init() {
 	flag.Float64Var(&percentWrites, "percentWrites", 5.0, "percentage of actual LRPs to write on each rep bulk loop")
 
 	flag.StringVar(&databaseConnectionString, "databaseConnectionString", "", "Connection string for a MySQL database")
+	flag.StringVar(&databaseDriver, "databaseDriver", "mysql", "SQL database driver name")
 
 	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
 	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "BBS client SSL certificate")
@@ -202,8 +203,10 @@ type expectedLRPCounts struct {
 	ActualLRPVariations map[string]float64
 }
 
-var _ = SynchronizedBeforeSuite(func() []byte {
-	bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
+func initializeActiveDB() *sql.DB {
+	if activeDB != nil {
+		return nil
+	}
 
 	if databaseConnectionString == "" {
 		etcdOptions, err := etcdFlags.Validate()
@@ -212,99 +215,60 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		etcdClient = initializeEtcdClient(logger, etcdOptions)
 		etcdDB = initializeETCDDB(logger, etcdClient)
 
-		cleanupETCD()
-
 		activeDB = etcdDB
+		return nil
+	}
+
+	if databaseDriver == "postgres" && !strings.Contains(databaseConnectionString, "sslmode") {
+		databaseConnectionString = fmt.Sprintf("%s?sslmode=disable", databaseConnectionString)
+	}
+
+	sqlConn, err := sql.Open(databaseDriver, databaseConnectionString)
+	if err != nil {
+		logger.Fatal("failed-to-open-sql", err)
+	}
+	sqlConn.SetMaxOpenConns(1)
+	sqlConn.SetMaxIdleConns(1)
+
+	err = sqlConn.Ping()
+	Expect(err).NotTo(HaveOccurred())
+
+	sqlDB = initializeSQLDB(logger, sqlConn)
+	activeDB = sqlDB
+	return sqlConn
+}
+
+var _ = BeforeSuite(func() {
+	bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
+
+	if conn := initializeActiveDB(); conn != nil {
+		cleanupSQLDB(conn)
 	} else {
-		sqlConn, err := sql.Open("mysql", databaseConnectionString)
-		if err != nil {
-			logger.Fatal("failed-to-open-sql", err)
-		}
-		sqlConn.SetMaxOpenConns(1)
-		sqlConn.SetMaxIdleConns(1)
-
-		err = sqlConn.Ping()
-		Expect(err).NotTo(HaveOccurred())
-
-		sqlDB = initializeSQLDB(logger, sqlConn)
-		cleanupSQLDB(sqlConn)
-		activeDB = sqlDB
+		cleanupETCD()
 	}
 
 	_, err := bbsClient.Domains(logger)
 	Expect(err).NotTo(HaveOccurred())
 
-	var expectedDesiredLRPCount int
-	var expectedDesiredLRPVariation float64
-	expectedActualLRPCounts := make(map[string]int)
-	expectedActualLRPVariations := make(map[string]float64)
+	expectedActualLRPVariations = make(map[string]float64)
 
 	if desiredLRPs > 0 {
 		desiredLRPGenerator := generator.NewDesiredLRPGenerator(errorTolerance, metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
-		expectedDesiredLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, numReps, desiredLRPs)
+		expectedLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, numReps, desiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
-		expectedDesiredLRPVariation = float64(expectedDesiredLRPCount) * errorTolerance
+		expectedLRPVariation = float64(expectedLRPCount) * errorTolerance
 
 		for k, v := range expectedActualLRPCounts {
 			expectedActualLRPVariations[k] = float64(v) * errorTolerance
 		}
 	}
-
-	counts := expectedLRPCounts{
-		DesiredLRPCount:     expectedDesiredLRPCount,
-		DesiredLRPVariation: expectedDesiredLRPVariation,
-		ActualLRPCounts:     expectedActualLRPCounts,
-		ActualLRPVariations: expectedActualLRPVariations,
-	}
-
-	data, err := json.Marshal(counts)
-	Expect(err).NotTo(HaveOccurred())
-
-	return data
-}, func(data []byte) {
-	var expectedLRPCounts expectedLRPCounts
-	err := json.Unmarshal(data, &expectedLRPCounts)
-	Expect(err).NotTo(HaveOccurred())
-
-	expectedLRPCount = expectedLRPCounts.DesiredLRPCount
-	expectedLRPVariation = expectedLRPCounts.DesiredLRPVariation
-
-	expectedActualLRPCounts = expectedLRPCounts.ActualLRPCounts
-	expectedActualLRPVariations = expectedLRPCounts.ActualLRPVariations
-
-	bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
-
-	if databaseConnectionString == "" {
-		etcdOptions, err := etcdFlags.Validate()
-		Expect(err).NotTo(HaveOccurred())
-
-		etcdClient = initializeEtcdClient(logger, etcdOptions)
-		etcdDB = initializeETCDDB(logger, etcdClient)
-
-		activeDB = etcdDB
-	} else {
-		sqlConn, err := sql.Open("mysql", databaseConnectionString)
-		if err != nil {
-			logger.Fatal("failed-to-open-sql", err)
-		}
-		sqlConn.SetMaxOpenConns(1)
-		sqlConn.SetMaxIdleConns(1)
-
-		err = sqlConn.Ping()
-		Expect(err).NotTo(HaveOccurred())
-
-		sqlDB = initializeSQLDB(logger, sqlConn)
-
-		activeDB = sqlDB
-	}
 })
 
-var _ = SynchronizedAfterSuite(func() {
-}, func() {
+var _ = AfterSuite(func() {
 	if databaseConnectionString == "" {
 		cleanupETCD()
 	} else {
-		sqlConn, err := sql.Open("mysql", databaseConnectionString)
+		sqlConn, err := sql.Open(databaseDriver, databaseConnectionString)
 		if err != nil {
 			logger.Fatal("failed-to-open-sql", err)
 		}
@@ -475,7 +439,7 @@ func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
 	}
 	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
 
-	return sqldb.NewSQLDB(sqlConn, 1000, 1000, format.ENCODED_PROTO, cryptor, guidprovider.DefaultGuidProvider, clock.NewClock(), "mysql")
+	return sqldb.NewSQLDB(sqlConn, 1000, 1000, format.ENCODED_PROTO, cryptor, guidprovider.DefaultGuidProvider, clock.NewClock(), databaseDriver)
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.InternalClient {
