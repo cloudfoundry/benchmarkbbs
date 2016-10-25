@@ -115,7 +115,7 @@ var BenchmarkTests = func(numReps, numTrials int) {
 					cellSet := models.NewCellSet()
 					for i := 0; i < numReps; i++ {
 						cellID := fmt.Sprintf("cell-%d", i)
-						presence := models.NewCellPresence(cellID, "earth", "north", models.CellCapacity{}, nil, nil, nil, nil)
+						presence := models.NewCellPresence(cellID, "earth", "http://planet-earth", "north", models.CellCapacity{}, nil, nil, nil, nil)
 						cellSet.Add(&presence)
 					}
 
