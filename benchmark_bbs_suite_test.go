@@ -75,6 +75,8 @@ var (
 
 	errorTolerance float64
 
+	localRouteEmitters bool
+
 	logLevel    string
 	logFilename string
 
@@ -129,6 +131,8 @@ func init() {
 	flag.StringVar(&logFilename, "logFilename", "", "Name of local file to save logs to")
 	flag.Float64Var(&errorTolerance, "errorTolerance", 0.05, "error tollerance rate")
 
+	flag.BoolVar(&localRouteEmitters, "localRouteEmitters", false, "whether to simulate one route emitter per cell")
+
 	etcdFlags = AddETCDFlags(flag.CommandLine)
 	encryptionFlags = encryption.AddEncryptionFlags(flag.CommandLine)
 
@@ -138,7 +142,7 @@ func init() {
 		log.Fatal("bbsAddress is required")
 	}
 
-	BenchmarkTests(numReps, numTrials)
+	BenchmarkTests(numReps, numTrials, localRouteEmitters)
 }
 
 func TestBenchmarkBbs(t *testing.T) {

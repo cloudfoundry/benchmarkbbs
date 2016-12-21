@@ -10,6 +10,7 @@ import (
 
 	"code.cloudfoundry.org/bbs/models"
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
+	"code.cloudfoundry.org/lager"
 	"code.cloudfoundry.org/operationq"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -31,7 +32,7 @@ var bulkCycle = 30 * time.Second
 var eventCount int32 = 0
 var claimCount int32 = 0
 
-var BenchmarkTests = func(numReps, numTrials int) {
+var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 	Describe("main benchmark test", func() {
 
 		eventCountRunner := func(signals <-chan os.Signal, ready chan<- struct{}) error {
@@ -127,38 +128,60 @@ var BenchmarkTests = func(numReps, numTrials int) {
 				}
 			}()
 
-			// start route-emitter
-			go func() {
-				defer GinkgoRecover()
-				logger.Info("start-route-emitter-loop")
-				defer logger.Info("finish-route-emitter-loop")
-				wg.Add(1)
-				defer wg.Done()
-				for i := 0; i < numTrials; i++ {
-					sleepDuration := getSleepDuration(i, bulkCycle)
-					time.Sleep(sleepDuration)
-					b.Time("fetch all actualLRPs", func() {
-						actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{})
-						Expect(err).NotTo(HaveOccurred())
-						Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
+			// we need to make sure we don't run out of ports so limit amount of
+			// active http requests to 25000
+			semaphore := make(chan struct{}, 25000)
 
-						desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
-						Expect(err).NotTo(HaveOccurred())
-						Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in route-emitter")
-					}, reporter.ReporterInfo{
-						MetricName: FetchActualLRPsAndSchedulingInfos,
-					})
-				}
-			}()
+			numRouteEmitters := 1
+
+			if localRouteEmitters {
+				numRouteEmitters = numReps
+			}
+
+			for i := 0; i < numRouteEmitters; i++ {
+				cellID := fmt.Sprintf("cell-%d", i)
+				wg.Add(1)
+
+				// start route-emitter
+				go func() {
+					defer GinkgoRecover()
+
+					lagerData := lager.Data{}
+					if localRouteEmitters {
+						lagerData = lager.Data{"cell-id": cellID}
+					}
+					logger := logger.WithData(lagerData)
+					logger.Info("start-route-emitter-loop")
+					defer logger.Info("finish-route-emitter-loop")
+
+					defer wg.Done()
+
+					for j := 0; j < numTrials; j++ {
+						sleepDuration := getSleepDuration(j, bulkCycle)
+						time.Sleep(sleepDuration)
+						b.Time("fetch all actualLRPs and schedulingInfos", func() {
+							semaphore <- struct{}{}
+							actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{})
+							<-semaphore
+							Expect(err).NotTo(HaveOccurred())
+							Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
+
+							semaphore <- struct{}{}
+							desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
+							<-semaphore
+							Expect(err).NotTo(HaveOccurred())
+							Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in route-emitter")
+						}, reporter.ReporterInfo{
+							MetricName: FetchActualLRPsAndSchedulingInfos,
+						})
+					}
+				}()
+			}
 
 			totalRan := int32(0)
 			totalQueued := int32(0)
 			var err error
 			queue := operationq.NewSlidingQueue(numTrials)
-
-			// we need to make sure we don't run out of ports so limit amount of
-			// active http requests to 25000
-			semaphore := make(chan struct{}, 25000)
 
 			for i := 0; i < numReps; i++ {
 				cellID := fmt.Sprintf("cell-%d", i)
