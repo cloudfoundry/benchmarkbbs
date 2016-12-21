@@ -24,6 +24,7 @@ import (
 	"code.cloudfoundry.org/bbs/encryption"
 	"code.cloudfoundry.org/bbs/format"
 	"code.cloudfoundry.org/bbs/guidprovider"
+	benchmarkconfig "code.cloudfoundry.org/benchmarkbbs/config"
 	"code.cloudfoundry.org/benchmarkbbs/generator"
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
 	"code.cloudfoundry.org/cfhttp"
@@ -44,55 +45,23 @@ import (
 )
 
 var (
-	bbsAddress    string
-	bbsClientCert string
-	bbsClientKey  string
-
-	etcdFlags *ETCDFlags
-
-	dataDogAPIKey string
-	dataDogAppKey string
-
-	awsAccessKeyID     string
-	awsSecretAccessKey string
-	awsBucketName      string
-	awsRegion          string
-
-	desiredLRPs     int
-	encryptionFlags *encryption.EncryptionFlags
-	metricPrefix    string
-
-	numTrials          int
-	numReps            int
-	numPopulateWorkers int
-	percentWrites      float64
-
 	expectedLRPCount     int
 	expectedLRPVariation float64
 
 	expectedActualLRPCounts     map[string]int
 	expectedActualLRPVariations map[string]float64
 
-	errorTolerance float64
+	config benchmarkconfig.BenchmarkBBSConfig
 
-	localRouteEmitters bool
-
-	logLevel    string
-	logFilename string
-
-	databaseConnectionString string
-	databaseDriver           string
-
-	logger               lager.Logger
-	etcdClient           *etcd.Client
-	etcdDB               *etcddb.ETCDDB
-	sqlDB                *sqldb.SQLDB
-	activeDB             db.DB
-	bbsClient            bbs.InternalClient
-	bbsClientHTTPTimeout time.Duration
-	dataDogClient        *datadog.Client
-	dataDogReporter      reporter.DataDogReporter
-	reporters            []Reporter
+	logger          lager.Logger
+	etcdClient      *etcd.Client
+	etcdDB          *etcddb.ETCDDB
+	sqlDB           *sqldb.SQLDB
+	activeDB        db.DB
+	bbsClient       bbs.InternalClient
+	dataDogClient   *datadog.Client
+	dataDogReporter reporter.DataDogReporter
+	reporters       []Reporter
 )
 
 const (
@@ -104,50 +73,25 @@ const (
 
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	flag.IntVar(&numTrials, "numTrials", 10, "number of benchmark trials to average across")
-	flag.IntVar(&numReps, "numReps", 10, "number of reps to simulate")
-	flag.IntVar(&numPopulateWorkers, "numPopulateWorkers", 10, "number of workers generating desired LRPs during setup")
-	flag.IntVar(&desiredLRPs, "desiredLRPs", 0, "number of single instance DesiredLRPs to create")
-	flag.Float64Var(&percentWrites, "percentWrites", 5.0, "percentage of actual LRPs to write on each rep bulk loop")
-
-	flag.StringVar(&databaseConnectionString, "databaseConnectionString", "", "Connection string for a MySQL database")
-	flag.StringVar(&databaseDriver, "databaseDriver", "mysql", "SQL database driver name")
-
-	flag.StringVar(&bbsAddress, "bbsAddress", "", "Address of the BBS Server")
-	flag.StringVar(&bbsClientCert, "bbsClientCert", "", "BBS client SSL certificate")
-	flag.StringVar(&bbsClientKey, "bbsClientKey", "", "BBS client SSL key")
-	flag.DurationVar(&bbsClientHTTPTimeout, "bbsClientHTTPTimeout", 0, "BBS client HTTP timeout")
-
-	flag.StringVar(&dataDogAPIKey, "dataDogAPIKey", "", "DataDog API key")
-	flag.StringVar(&dataDogAppKey, "dataDogAppKey", "", "DataDog app Key")
-	flag.StringVar(&metricPrefix, "metricPrefix", "", "DataDog metric prefix")
-
-	flag.StringVar(&awsAccessKeyID, "awsAccessKeyID", "", "AWS Access Key ID")
-	flag.StringVar(&awsSecretAccessKey, "awsSecretAccessKey", "", "AWS Secret Access Key")
-	flag.StringVar(&awsBucketName, "awsBucketName", "", "AWS Bucket to store metrics")
-	flag.StringVar(&awsRegion, "awsRegion", "us-west-1", "AWS Bucket to store metrics")
-
-	flag.StringVar(&logLevel, "logLevel", string(INFO), "log level: debug, info, error or fatal")
-	flag.StringVar(&logFilename, "logFilename", "", "Name of local file to save logs to")
-	flag.Float64Var(&errorTolerance, "errorTolerance", 0.05, "error tollerance rate")
-
-	flag.BoolVar(&localRouteEmitters, "localRouteEmitters", false, "whether to simulate one route emitter per cell")
-
-	etcdFlags = AddETCDFlags(flag.CommandLine)
-	encryptionFlags = encryption.AddEncryptionFlags(flag.CommandLine)
-
+	configFile := flag.String("config", "", "config file")
 	flag.Parse()
 
-	if bbsAddress == "" {
+	var err error
+	config, err = benchmarkconfig.NewBenchmarkBBSConfig(*configFile)
+	if err != nil {
+		panic(err)
+	}
+
+	if config.BBSAddress == "" {
 		log.Fatal("bbsAddress is required")
 	}
 
-	BenchmarkTests(numReps, numTrials, localRouteEmitters)
+	BenchmarkTests(config.NumReps, config.NumTrials, config.LocalRouteEmitters)
 }
 
 func TestBenchmarkBbs(t *testing.T) {
 	var lagerLogLevel lager.LogLevel
-	switch logLevel {
+	switch config.LogLevel {
 	case DEBUG:
 		lagerLogLevel = lager.DEBUG
 	case INFO:
@@ -157,16 +101,16 @@ func TestBenchmarkBbs(t *testing.T) {
 	case FATAL:
 		lagerLogLevel = lager.FATAL
 	default:
-		panic(fmt.Errorf("unknown log level: %s", logLevel))
+		panic(fmt.Errorf("unknown log level: %s", config.LogLevel))
 	}
 
 	var logWriter io.Writer
-	if logFilename == "" {
+	if config.LogFilename == "" {
 		logWriter = GinkgoWriter
 	} else {
-		logFile, err := os.Create(logFilename)
+		logFile, err := os.Create(config.LogFilename)
 		if err != nil {
-			panic(fmt.Errorf("Error opening file '%s': %s", logFilename, err.Error()))
+			panic(fmt.Errorf("Error opening file '%s': %s", config.LogFilename, err.Error()))
 		}
 		defer logFile.Close()
 
@@ -178,20 +122,20 @@ func TestBenchmarkBbs(t *testing.T) {
 
 	reporters = []Reporter{}
 
-	if dataDogAPIKey != "" && dataDogAppKey != "" {
-		dataDogClient = datadog.NewClient(dataDogAPIKey, dataDogAppKey)
-		dataDogReporter = reporter.NewDataDogReporter(logger, metricPrefix, dataDogClient)
+	if config.DataDogAPIKey != "" && config.DataDogAppKey != "" {
+		dataDogClient = datadog.NewClient(config.DataDogAPIKey, config.DataDogAppKey)
+		dataDogReporter = reporter.NewDataDogReporter(logger, config.MetricPrefix, dataDogClient)
 		reporters = append(reporters, &dataDogReporter)
 	}
 
-	if awsAccessKeyID != "" && awsSecretAccessKey != "" && awsBucketName != "" {
-		creds := credentials.NewStaticCredentials(awsAccessKeyID, awsSecretAccessKey, "")
+	if config.AwsAccessKeyID != "" && config.AwsSecretAccessKey != "" && config.AwsBucketName != "" {
+		creds := credentials.NewStaticCredentials(config.AwsAccessKeyID, config.AwsSecretAccessKey, "")
 		s3Client := s3.New(&aws.Config{
-			Region:      &awsRegion,
+			Region:      &config.AwsRegion,
 			Credentials: creds,
 		})
 		uploader := s3manager.NewUploader(&s3manager.UploadOptions{S3: s3Client})
-		reporter := reporter.NewS3Reporter(logger, awsBucketName, uploader)
+		reporter := reporter.NewS3Reporter(logger, config.AwsBucketName, uploader)
 		reporters = append(reporters, &reporter)
 	}
 
@@ -212,8 +156,8 @@ func initializeActiveDB() *sql.DB {
 		return nil
 	}
 
-	if databaseConnectionString == "" {
-		etcdOptions, err := etcdFlags.Validate()
+	if config.DatabaseConnectionString == "" {
+		etcdOptions, err := config.ETCDConfig.Validate()
 		Expect(err).NotTo(HaveOccurred())
 
 		etcdClient = initializeEtcdClient(logger, etcdOptions)
@@ -223,11 +167,11 @@ func initializeActiveDB() *sql.DB {
 		return nil
 	}
 
-	if databaseDriver == "postgres" && !strings.Contains(databaseConnectionString, "sslmode") {
-		databaseConnectionString = fmt.Sprintf("%s?sslmode=disable", databaseConnectionString)
+	if config.DatabaseDriver == "postgres" && !strings.Contains(config.DatabaseConnectionString, "sslmode") {
+		config.DatabaseConnectionString = fmt.Sprintf("%s?sslmode=disable", config.DatabaseConnectionString)
 	}
 
-	sqlConn, err := sql.Open(databaseDriver, databaseConnectionString)
+	sqlConn, err := sql.Open(config.DatabaseDriver, config.DatabaseConnectionString)
 	if err != nil {
 		logger.Fatal("failed-to-open-sql", err)
 	}
@@ -243,7 +187,7 @@ func initializeActiveDB() *sql.DB {
 }
 
 var _ = BeforeSuite(func() {
-	bbsClient = initializeBBSClient(logger, bbsClientHTTPTimeout)
+	bbsClient = initializeBBSClient(logger, time.Duration(config.BBSClientHTTPTimeout))
 
 	if conn := initializeActiveDB(); conn != nil {
 		cleanupSQLDB(conn)
@@ -256,23 +200,29 @@ var _ = BeforeSuite(func() {
 
 	expectedActualLRPVariations = make(map[string]float64)
 
-	if desiredLRPs > 0 {
-		desiredLRPGenerator := generator.NewDesiredLRPGenerator(errorTolerance, metricPrefix, numPopulateWorkers, bbsClient, dataDogClient)
-		expectedLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, numReps, desiredLRPs)
+	if config.DesiredLRPs > 0 {
+		desiredLRPGenerator := generator.NewDesiredLRPGenerator(
+			config.ErrorTolerance,
+			config.MetricPrefix,
+			config.NumPopulateWorkers,
+			bbsClient,
+			dataDogClient,
+		)
+		expectedLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, config.NumReps, config.DesiredLRPs)
 		Expect(err).NotTo(HaveOccurred())
-		expectedLRPVariation = float64(expectedLRPCount) * errorTolerance
+		expectedLRPVariation = float64(expectedLRPCount) * config.ErrorTolerance
 
 		for k, v := range expectedActualLRPCounts {
-			expectedActualLRPVariations[k] = float64(v) * errorTolerance
+			expectedActualLRPVariations[k] = float64(v) * config.ErrorTolerance
 		}
 	}
 })
 
 var _ = AfterSuite(func() {
-	if databaseConnectionString == "" {
+	if config.DatabaseConnectionString == "" {
 		cleanupETCD()
 	} else {
-		sqlConn, err := sql.Open(databaseDriver, databaseConnectionString)
+		sqlConn, err := sql.Open(config.DatabaseDriver, config.DatabaseConnectionString)
 		if err != nil {
 			logger.Fatal("failed-to-open-sql", err)
 		}
@@ -284,100 +234,6 @@ var _ = AfterSuite(func() {
 		cleanupSQLDB(sqlConn)
 	}
 })
-
-type ETCDFlags struct {
-	etcdCertFile           string
-	etcdKeyFile            string
-	etcdCaFile             string
-	clusterUrls            string
-	clientSessionCacheSize int
-	maxIdleConnsPerHost    int
-}
-
-func AddETCDFlags(flagSet *flag.FlagSet) *ETCDFlags {
-	flags := &ETCDFlags{}
-
-	flagSet.StringVar(
-		&flags.clusterUrls,
-		"etcdCluster",
-		"http://127.0.0.1:4001",
-		"comma-separated list of etcd URLs (scheme://ip:port)",
-	)
-	flagSet.StringVar(
-		&flags.etcdCertFile,
-		"etcdCertFile",
-		"",
-		"Location of the client certificate for mutual auth",
-	)
-	flagSet.StringVar(
-		&flags.etcdKeyFile,
-		"etcdKeyFile",
-		"",
-		"Location of the client key for mutual auth",
-	)
-	flagSet.StringVar(
-		&flags.etcdCaFile,
-		"etcdCaFile",
-		"",
-		"Location of the CA certificate for mutual auth",
-	)
-
-	flagSet.IntVar(
-		&flags.clientSessionCacheSize,
-		"etcdSessionCacheSize",
-		0,
-		"Capacity of the ClientSessionCache option on the TLS configuration. If zero, golang's default will be used",
-	)
-	flagSet.IntVar(
-		&flags.maxIdleConnsPerHost,
-		"etcdMaxIdleConnsPerHost",
-		0,
-		"Controls the maximum number of idle (keep-alive) connctions per host. If zero, golang's default will be used",
-	)
-	return flags
-}
-
-func (flags *ETCDFlags) Validate() (*etcddb.ETCDOptions, error) {
-	scheme := ""
-	clusterUrls := strings.Split(flags.clusterUrls, ",")
-	for i, uString := range clusterUrls {
-		uString = strings.TrimSpace(uString)
-		clusterUrls[i] = uString
-		u, err := url.Parse(uString)
-		if err != nil {
-			return nil, fmt.Errorf("Invalid cluster URL: '%s', error: [%s]", uString, err.Error())
-		}
-		if scheme == "" {
-			if u.Scheme != "http" && u.Scheme != "https" {
-				return nil, errors.New("Invalid scheme: " + uString)
-			}
-			scheme = u.Scheme
-		} else if scheme != u.Scheme {
-			return nil, fmt.Errorf("Multiple url schemes provided: %s", flags.clusterUrls)
-		}
-	}
-
-	isSSL := false
-	if scheme == "https" {
-		isSSL = true
-		if flags.etcdCertFile == "" {
-			return nil, errors.New("Cert file must be provided for https connections")
-		}
-		if flags.etcdKeyFile == "" {
-			return nil, errors.New("Key file must be provided for https connections")
-		}
-	}
-
-	return &etcddb.ETCDOptions{
-		CertFile:    flags.etcdCertFile,
-		KeyFile:     flags.etcdKeyFile,
-		CAFile:      flags.etcdCaFile,
-		ClusterUrls: clusterUrls,
-		IsSSL:       isSSL,
-		ClientSessionCacheSize: flags.clientSessionCacheSize,
-		MaxIdleConnsPerHost:    flags.maxIdleConnsPerHost,
-	}, nil
-}
 
 func initializeEtcdClient(logger lager.Logger, etcdOptions *etcddb.ETCDOptions) *etcd.Client {
 	var etcdClient *etcd.Client
@@ -419,7 +275,7 @@ func initializeEtcdClient(logger lager.Logger, etcdOptions *etcddb.ETCDOptions) 
 }
 
 func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCDDB {
-	key, keys, err := encryptionFlags.Parse()
+	key, keys, err := config.EncryptionConfig.Parse()
 	if err != nil {
 		logger.Fatal("cannot-setup-encryption", err)
 	}
@@ -433,7 +289,7 @@ func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCD
 }
 
 func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
-	key, keys, err := encryptionFlags.Parse()
+	key, keys, err := config.EncryptionConfig.Parse()
 	if err != nil {
 		logger.Fatal("cannot-setup-encryption", err)
 	}
@@ -443,21 +299,36 @@ func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
 	}
 	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
 
-	return sqldb.NewSQLDB(sqlConn, 1000, 1000, format.ENCODED_PROTO, cryptor, guidprovider.DefaultGuidProvider, clock.NewClock(), databaseDriver)
+	return sqldb.NewSQLDB(
+		sqlConn,
+		1000,
+		1000,
+		format.ENCODED_PROTO,
+		cryptor,
+		guidprovider.DefaultGuidProvider,
+		clock.NewClock(),
+		config.DatabaseDriver,
+	)
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.InternalClient {
-	bbsURL, err := url.Parse(bbsAddress)
+	bbsURL, err := url.Parse(config.BBSAddress)
 	if err != nil {
 		logger.Fatal("Invalid BBS URL", err)
 	}
 
 	if bbsURL.Scheme != "https" {
-		return bbs.NewClient(bbsAddress)
+		return bbs.NewClient(config.BBSAddress)
 	}
 
 	cfhttp.Initialize(bbsClientHTTPTimeout)
-	bbsClient, err := bbs.NewSecureSkipVerifyClient(bbsAddress, bbsClientCert, bbsClientKey, 1, 25000)
+	bbsClient, err := bbs.NewSecureSkipVerifyClient(
+		config.BBSAddress,
+		config.BBSClientCert,
+		config.BBSClientKey,
+		1,
+		25000,
+	)
 	if err != nil {
 		logger.Fatal("Failed to configure secure BBS client", err)
 	}

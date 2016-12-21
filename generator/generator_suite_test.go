@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/bbs"
+	bbsconfig "code.cloudfoundry.org/bbs/cmd/bbs/config"
 	"code.cloudfoundry.org/bbs/cmd/bbs/testrunner"
 	"code.cloudfoundry.org/bbs/db/etcd/test/etcd_helpers"
+	"code.cloudfoundry.org/bbs/encryption"
 	"code.cloudfoundry.org/consuladapter/consulrunner"
 	"code.cloudfoundry.org/lager"
 	"code.cloudfoundry.org/lager/lagertest"
@@ -41,7 +43,7 @@ var bbsClient bbs.InternalClient
 var bbsBinPath string
 var bbsAddress string
 var bbsURL *url.URL
-var bbsArgs testrunner.Args
+var bbsConfig bbsconfig.BBSConfig
 var bbsRunner *ginkgomon.Runner
 var bbsProcess ifrit.Process
 var consulRunner *consulrunner.ClusterRunner
@@ -92,14 +94,16 @@ var _ = BeforeEach(func() {
 		Host:   bbsAddress,
 	}
 
-	bbsArgs = testrunner.Args{
-		Address:               bbsAddress,
-		AdvertiseURL:          bbsURL.String(),
-		AuctioneerAddress:     auctioneerServer.URL(),
-		MetricsReportInterval: 10 * time.Millisecond,
+	bbsConfig = bbsconfig.BBSConfig{
+		ListenAddress:     bbsAddress,
+		AdvertiseURL:      bbsURL.String(),
+		AuctioneerAddress: auctioneerServer.URL(),
+		ReportInterval:    bbsconfig.Duration(10 * time.Millisecond),
 
-		EncryptionKeys: []string{"label:key"},
-		ActiveKeyLabel: "label",
+		EncryptionConfig: encryption.EncryptionConfig{
+			EncryptionKeys: map[string]string{"label": "key"},
+			ActiveKeyLabel: "label",
+		},
 	}
 })
 

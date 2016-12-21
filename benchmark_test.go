@@ -219,7 +219,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 							for k := 0; k < numActuals; k++ {
 								actualLRP, _ := actuals[k].Resolve()
 								atomic.AddInt32(&totalQueued, 1)
-								queue.Push(&lrpOperation{actualLRP, percentWrites, b, &totalRan, &claimCount, semaphore})
+								queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, &totalRan, &claimCount, semaphore})
 							}
 						}, reporter.ReporterInfo{
 							MetricName: RepBulkLoop,
@@ -230,7 +230,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 
 			wg.Wait()
 
-			eventTolerance := float64(claimCount) * errorTolerance
+			eventTolerance := float64(claimCount) * config.ErrorTolerance
 			Eventually(func() int32 { return eventCount }, 2*time.Minute).Should(BeNumerically("~", claimCount, eventTolerance), "events received")
 			Eventually(func() int32 { return totalRan }, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
 		}, 1)
