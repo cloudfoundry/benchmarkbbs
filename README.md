@@ -80,6 +80,14 @@ To change the write load on the database, add the following property to the conf
 This property specifies the percentage of the total LRPs desired that the benchmarks will attempt to
 write on each trial.
 
+### Local Route Emitters
+
+To simulate the behavior of having local route emitters on each cell, the following property can be specified in the JSON configuration:
+
+```
+  "local_route_emitters": true,
+```
+
 ### MySQL Backend
 
 To test with the experimental MySQL backend, add the `"database_connection_string"`

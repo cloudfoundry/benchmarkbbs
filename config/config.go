@@ -15,7 +15,7 @@ type BenchmarkBBSConfig struct {
 	DesiredLRPs        int     `json:"desired_lrps,omitempty"`
 	PercentWrites      float64 `json:"percent_writes,omitempty"`
 	ErrorTolerance     float64 `json:"error_tolerance,omitempty"`
-	LocalRouteEmitters bool    `json:"local_router_emitters"`
+	LocalRouteEmitters bool    `json:"local_route_emitters"`
 
 	BBSAddress           string             `json:"bbs_address,omitempty"`
 	BBSClientCert        string             `json:"bbs_client_cert,omitempty"`
