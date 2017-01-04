@@ -30,50 +30,52 @@ const (
 
 var bulkCycle = 30 * time.Second
 var eventCount int32 = 0
-var claimCount int32 = 0
+var expectedEventCount int32 = 0
+
+func eventCountRunner(counter *int32) func(signals <-chan os.Signal, ready chan<- struct{}) error {
+	return func(signals <-chan os.Signal, ready chan<- struct{}) error {
+		eventSource, err := bbsClient.SubscribeToEvents(logger)
+		Expect(err).NotTo(HaveOccurred())
+		close(ready)
+
+		eventChan := make(chan models.Event)
+		go func() {
+			for {
+				event, err := eventSource.Next()
+				if err != nil {
+					logger.Error("error-getting-next-event", err)
+					return
+				}
+				if event != nil {
+					eventChan <- event
+				}
+			}
+		}()
+
+		for {
+			select {
+			case <-eventChan:
+				atomic.AddInt32(counter, 1)
+
+			case <-signals:
+				if eventSource != nil {
+					err := eventSource.Close()
+					if err != nil {
+						logger.Error("failed-closing-event-source", err)
+					}
+				}
+				return nil
+			}
+		}
+	}
+}
 
 var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 	Describe("main benchmark test", func() {
-		eventCountRunner := func(signals <-chan os.Signal, ready chan<- struct{}) error {
-			eventSource, err := bbsClient.SubscribeToEvents(logger)
-			Expect(err).NotTo(HaveOccurred())
-			close(ready)
-
-			eventChan := make(chan models.Event)
-			go func() {
-				for {
-					event, err := eventSource.Next()
-					if err != nil {
-						logger.Error("error-getting-next-event", err)
-						return
-					}
-					if event != nil {
-						eventChan <- event
-					}
-				}
-			}()
-
-			for {
-				select {
-				case <-eventChan:
-					atomic.AddInt32(&eventCount, 1)
-
-				case <-signals:
-					if eventSource != nil {
-						err := eventSource.Close()
-						if err != nil {
-							logger.Error("failed-closing-event-source", err)
-						}
-					}
-					return nil
-				}
-			}
-		}
-
 		var process ifrit.Process
 
 		BeforeEach(func() {
-			process = ifrit.Invoke(ifrit.RunFunc(eventCountRunner))
+			process = ifrit.Invoke(ifrit.RunFunc(eventCountRunner(&eventCount)))
 		})
 
 		AfterEach(func() {
@@ -84,49 +86,12 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 			wg := sync.WaitGroup{}
 
 			// start nsync
-			go func() {
-				defer GinkgoRecover()
-				logger.Info("start-nsync-bulker-loop")
-				defer logger.Info("finish-nsync-bulker-loop")
-				wg.Add(1)
-				defer wg.Done()
-				for i := 0; i < numTrials; i++ {
-					sleepDuration := getSleepDuration(i, bulkCycle)
-					time.Sleep(sleepDuration)
-					b.Time("fetch all desired LRP scheduling info", func() {
-						desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
-						Expect(err).NotTo(HaveOccurred())
-						Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in Nsync Bulk Loop")
-					}, reporter.ReporterInfo{
-						MetricName: NsyncBulkerFetching,
-					})
-				}
-			}()
+			wg.Add(1)
+			go nsyncBulkerLoop(b, &wg, numTrials)
 
 			// start convergence
-			go func() {
-				defer GinkgoRecover()
-				logger.Info("start-lrp-convergence-loop")
-				defer logger.Info("finish-lrp-convergence-loop")
-				wg.Add(1)
-				defer wg.Done()
-				for i := 0; i < numTrials; i++ {
-					sleepDuration := getSleepDuration(i, bulkCycle)
-					time.Sleep(sleepDuration)
-					cellSet := models.NewCellSet()
-					for i := 0; i < numReps; i++ {
-						cellID := fmt.Sprintf("cell-%d", i)
-						presence := models.NewCellPresence(cellID, "earth", "http://planet-earth", "north", models.CellCapacity{}, nil, nil, nil, nil)
-						cellSet.Add(&presence)
-					}
-
-					b.Time("BBS' internal gathering of LRPs", func() {
-						activeDB.ConvergeLRPs(logger, cellSet)
-					}, reporter.ReporterInfo{
-						MetricName: ConvergenceGathering,
-					})
-				}
-			}()
+			wg.Add(1)
+			go convergence(b, &wg, numTrials, numReps)
 
 			// we need to make sure we don't run out of ports so limit amount of
 			// active http requests to 25000
@@ -138,103 +103,181 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 				numRouteEmitters = numReps
 			}
 
+			routeEmitterEventCounts := make(map[string]*int32)
+
 			for i := 0; i < numRouteEmitters; i++ {
 				cellID := fmt.Sprintf("cell-%d", i)
-				wg.Add(1)
+
+				routeEmitterEventCount := new(int32)
+				routeEmitterEventCounts[cellID] = routeEmitterEventCount
 
 				// start route-emitter
-				go func() {
-					defer GinkgoRecover()
-
-					lagerData := lager.Data{}
-					if localRouteEmitters {
-						lagerData = lager.Data{"cell-id": cellID}
-					}
-					logger := logger.WithData(lagerData)
-					logger.Info("start-route-emitter-loop")
-					defer logger.Info("finish-route-emitter-loop")
-
-					defer wg.Done()
-
-					for j := 0; j < numTrials; j++ {
-						sleepDuration := getSleepDuration(j, bulkCycle)
-						time.Sleep(sleepDuration)
-						b.Time("fetch all actualLRPs and schedulingInfos", func() {
-							semaphore <- struct{}{}
-							actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{})
-							<-semaphore
-							Expect(err).NotTo(HaveOccurred())
-							Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
-
-							semaphore <- struct{}{}
-							desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
-							<-semaphore
-							Expect(err).NotTo(HaveOccurred())
-							Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in route-emitter")
-						}, reporter.ReporterInfo{
-							MetricName: FetchActualLRPsAndSchedulingInfos,
-						})
-					}
-				}()
+				wg.Add(1)
+				go routeEmitter(b, &wg, localRouteEmitters, cellID, routeEmitterEventCount, semaphore, numTrials)
 			}
+
+			queue := operationq.NewSlidingQueue(numTrials)
 
 			totalRan := int32(0)
 			totalQueued := int32(0)
-			var err error
-			queue := operationq.NewSlidingQueue(numTrials)
 
 			for i := 0; i < numReps; i++ {
 				cellID := fmt.Sprintf("cell-%d", i)
 				wg.Add(1)
 
-				go func(cellID string) {
-					defer GinkgoRecover()
-					defer wg.Done()
-
-					for j := 0; j < numTrials; j++ {
-						sleepDuration := getSleepDuration(j, bulkCycle)
-						time.Sleep(sleepDuration)
-
-						b.Time("rep bulk loop", func() {
-							defer GinkgoRecover()
-							var actuals []*models.ActualLRPGroup
-							b.Time("rep bulk fetch", func() {
-								semaphore <- struct{}{}
-								actuals, err = bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{CellID: cellID})
-								<-semaphore
-								Expect(err).NotTo(HaveOccurred())
-							}, reporter.ReporterInfo{
-								MetricName: RepBulkFetching,
-							})
-
-							expectedActualLRPCount, ok := expectedActualLRPCounts[cellID]
-							Expect(ok).To(BeTrue())
-
-							expectedActualLRPVariation, ok := expectedActualLRPVariations[cellID]
-							Expect(ok).To(BeTrue())
-
-							Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation), "Number of ActualLRPs retrieved by cell %s in rep bulk loop", cellID)
-
-							numActuals := len(actuals)
-							for k := 0; k < numActuals; k++ {
-								actualLRP, _ := actuals[k].Resolve()
-								atomic.AddInt32(&totalQueued, 1)
-								queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, &totalRan, &claimCount, semaphore})
-							}
-						}, reporter.ReporterInfo{
-							MetricName: RepBulkLoop,
-						})
-					}
-				}(cellID)
+				go repBulker(b, &wg, cellID, numTrials, semaphore, &totalQueued, &totalRan, &expectedEventCount, queue)
 			}
 
 			wg.Wait()
 
-			eventTolerance := float64(claimCount) * config.ErrorTolerance
-			Eventually(func() int32 { return atomic.LoadInt32(&eventCount) }, 2*time.Minute).Should(BeNumerically("~", claimCount, eventTolerance), "events received")
-			Eventually(func() int32 { return atomic.LoadInt32(&totalRan) }, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
+			eventTolerance := float64(atomic.LoadInt32(&expectedEventCount)) * config.ErrorTolerance
+
+			Eventually(func() int32 {
+				return atomic.LoadInt32(&eventCount)
+			}, 2*time.Minute).Should(BeNumerically("~", expectedEventCount, eventTolerance), "events received")
+
+			Eventually(func() int32 {
+				return atomic.LoadInt32(&totalRan)
+			}, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
+
+			for _, v := range routeEmitterEventCounts {
+				Eventually(func() int32 {
+					return atomic.LoadInt32(v)
+				}, 2*time.Minute).Should(BeNumerically("~", expectedEventCount, eventTolerance), "events received")
+			}
 		}, 1)
 	})
+}
+
+func getSleepDuration(loopCounter int, cycleTime time.Duration) time.Duration {
+	sleepDuration := cycleTime
+	if loopCounter == 0 {
+		numMilli := rand.Intn(int(cycleTime.Nanoseconds() / 1000000))
+		sleepDuration = time.Duration(numMilli) * time.Millisecond
+	}
+	return sleepDuration
+}
+
+func nsyncBulkerLoop(b Benchmarker, wg *sync.WaitGroup, numTrials int) {
+	defer GinkgoRecover()
+	logger.Info("start-nsync-bulker-loop")
+	defer logger.Info("finish-nsync-bulker-loop")
+	defer wg.Done()
+
+	for i := 0; i < numTrials; i++ {
+		sleepDuration := getSleepDuration(i, bulkCycle)
+		time.Sleep(sleepDuration)
+		b.Time("fetch all desired LRP scheduling info", func() {
+			desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in Nsync Bulk Loop")
+		}, reporter.ReporterInfo{
+			MetricName: NsyncBulkerFetching,
+		})
+	}
+}
+
+func convergence(b Benchmarker, wg *sync.WaitGroup, numTrials, numReps int) {
+	defer GinkgoRecover()
+	logger.Info("start-lrp-convergence-loop")
+	defer logger.Info("finish-lrp-convergence-loop")
+	defer wg.Done()
+
+	for i := 0; i < numTrials; i++ {
+		sleepDuration := getSleepDuration(i, bulkCycle)
+		time.Sleep(sleepDuration)
+		cellSet := models.NewCellSet()
+		for i := 0; i < numReps; i++ {
+			cellID := fmt.Sprintf("cell-%d", i)
+			presence := models.NewCellPresence(cellID, "earth", "http://planet-earth", "north", models.CellCapacity{}, nil, nil, nil, nil)
+			cellSet.Add(&presence)
+		}
+
+		b.Time("BBS' internal gathering of LRPs", func() {
+			activeDB.ConvergeLRPs(logger, cellSet)
+		}, reporter.ReporterInfo{
+			MetricName: ConvergenceGathering,
+		})
+	}
+}
+
+func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, semaphore chan struct{}, totalQueued, totalRan, expectedEventCount *int32, queue operationq.Queue) {
+	defer GinkgoRecover()
+	defer wg.Done()
+
+	var err error
+
+	for j := 0; j < numTrials; j++ {
+		sleepDuration := getSleepDuration(j, bulkCycle)
+		time.Sleep(sleepDuration)
+
+		b.Time("rep bulk loop", func() {
+			defer GinkgoRecover()
+			var actuals []*models.ActualLRPGroup
+			b.Time("rep bulk fetch", func() {
+				semaphore <- struct{}{}
+				actuals, err = bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{CellID: cellID})
+				<-semaphore
+				Expect(err).NotTo(HaveOccurred())
+			}, reporter.ReporterInfo{
+				MetricName: RepBulkFetching,
+			})
+
+			expectedActualLRPCount, ok := expectedActualLRPCounts[cellID]
+			Expect(ok).To(BeTrue())
+
+			expectedActualLRPVariation, ok := expectedActualLRPVariations[cellID]
+			Expect(ok).To(BeTrue())
+
+			Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation), "Number of ActualLRPs retrieved by cell %s in rep bulk loop", cellID)
+
+			numActuals := len(actuals)
+			for k := 0; k < numActuals; k++ {
+				actualLRP, _ := actuals[k].Resolve()
+				atomic.AddInt32(totalQueued, 1)
+				queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, totalRan, expectedEventCount, semaphore})
+			}
+		}, reporter.ReporterInfo{
+			MetricName: RepBulkLoop,
+		})
+	}
+}
+
+func routeEmitter(b Benchmarker, wg *sync.WaitGroup, localRouteEmitters bool, cellID string, routeEmitterEventCount *int32, semaphore chan struct{}, numTrials int) {
+	defer GinkgoRecover()
+
+	lagerData := lager.Data{}
+	if localRouteEmitters {
+		lagerData = lager.Data{"cell-id": cellID}
+	}
+	logger := logger.WithData(lagerData)
+	logger.Info("start-route-emitter-loop")
+	defer logger.Info("finish-route-emitter-loop")
+
+	defer wg.Done()
+
+	ifrit.Invoke(ifrit.RunFunc(eventCountRunner(routeEmitterEventCount)))
+
+	for j := 0; j < numTrials; j++ {
+		sleepDuration := getSleepDuration(j, bulkCycle)
+		time.Sleep(sleepDuration)
+		b.Time("fetch all actualLRPs and schedulingInfos", func() {
+			semaphore <- struct{}{}
+			actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{})
+			<-semaphore
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
+
+			semaphore <- struct{}{}
+			desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
+			<-semaphore
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in route-emitter")
+
+		}, reporter.ReporterInfo{
+			MetricName: FetchActualLRPsAndSchedulingInfos,
+		})
+	}
 }
 
 type lrpOperation struct {
@@ -242,7 +285,7 @@ type lrpOperation struct {
 	percentWrites    float64
 	b                Benchmarker
 	globalCount      *int32
-	globalClaimCount *int32
+	globalEventCount *int32
 	semaphore        chan struct{}
 }
 
@@ -266,8 +309,10 @@ func (lo *lrpOperation) Execute() {
 		err = bbsClient.StartActualLRP(logger, &actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
 		<-lo.semaphore
 		Expect(err).NotTo(HaveOccurred())
-		if actualLRP.State == models.ActualLRPStateClaimed {
-			defer atomic.AddInt32(lo.globalClaimCount, 1)
+
+		// if the actual lrp was not already started, an event will be generated
+		if actualLRP.State != models.ActualLRPStateRunning {
+			atomic.AddInt32(lo.globalEventCount, 1)
 		}
 	}, reporter.ReporterInfo{
 		MetricName: RepStartActualLRP,
@@ -280,18 +325,9 @@ func (lo *lrpOperation) Execute() {
 			err = bbsClient.ClaimActualLRP(logger, actualLRP.ActualLRPKey.ProcessGuid, index, &actualLRP.ActualLRPInstanceKey)
 			<-lo.semaphore
 			Expect(err).NotTo(HaveOccurred())
-			defer atomic.AddInt32(lo.globalClaimCount, 1)
+			atomic.AddInt32(lo.globalEventCount, 1)
 		}, reporter.ReporterInfo{
 			MetricName: RepClaimActualLRP,
 		})
 	}
-}
-
-func getSleepDuration(loopCounter int, cycleTime time.Duration) time.Duration {
-	sleepDuration := cycleTime
-	if loopCounter == 0 {
-		numMilli := rand.Intn(int(cycleTime.Nanoseconds() / 1000000))
-		sleepDuration = time.Duration(numMilli) * time.Millisecond
-	}
-	return sleepDuration
 }
