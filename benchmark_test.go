@@ -34,7 +34,6 @@ var claimCount int32 = 0
 
 var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 	Describe("main benchmark test", func() {
-
 		eventCountRunner := func(signals <-chan os.Signal, ready chan<- struct{}) error {
 			eventSource, err := bbsClient.SubscribeToEvents(logger)
 			Expect(err).NotTo(HaveOccurred())
@@ -57,7 +56,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 			for {
 				select {
 				case <-eventChan:
-					eventCount += 1
+					atomic.AddInt32(&eventCount, 1)
 
 				case <-signals:
 					if eventSource != nil {
@@ -72,6 +71,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 		}
 
 		var process ifrit.Process
+
 		BeforeEach(func() {
 			process = ifrit.Invoke(ifrit.RunFunc(eventCountRunner))
 		})
@@ -231,8 +231,8 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 			wg.Wait()
 
 			eventTolerance := float64(claimCount) * config.ErrorTolerance
-			Eventually(func() int32 { return eventCount }, 2*time.Minute).Should(BeNumerically("~", claimCount, eventTolerance), "events received")
-			Eventually(func() int32 { return totalRan }, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
+			Eventually(func() int32 { return atomic.LoadInt32(&eventCount) }, 2*time.Minute).Should(BeNumerically("~", claimCount, eventTolerance), "events received")
+			Eventually(func() int32 { return atomic.LoadInt32(&totalRan) }, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
 		}, 1)
 	})
 }
