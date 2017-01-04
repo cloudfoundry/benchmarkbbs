@@ -97,16 +97,12 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 			// active http requests to 25000
 			semaphore := make(chan struct{}, 25000)
 
-			numRouteEmitters := 1
-
-			if localRouteEmitters {
-				numRouteEmitters = numReps
-			}
-
 			routeEmitterEventCounts := make(map[string]*int32)
-
-			for i := 0; i < numRouteEmitters; i++ {
-				cellID := fmt.Sprintf("cell-%d", i)
+			for i := 0; i < numReps; i++ {
+				cellID := ""
+				if localRouteEmitters {
+					cellID = fmt.Sprintf("cell-%d", i)
+				}
 
 				routeEmitterEventCount := new(int32)
 				routeEmitterEventCounts[cellID] = routeEmitterEventCount
@@ -114,6 +110,10 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 				// start route-emitter
 				wg.Add(1)
 				go routeEmitter(b, &wg, localRouteEmitters, cellID, routeEmitterEventCount, semaphore, numTrials)
+
+				if !localRouteEmitters {
+					break
+				}
 			}
 
 			queue := operationq.NewSlidingQueue(numTrials)
@@ -246,11 +246,8 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 func routeEmitter(b Benchmarker, wg *sync.WaitGroup, localRouteEmitters bool, cellID string, routeEmitterEventCount *int32, semaphore chan struct{}, numTrials int) {
 	defer GinkgoRecover()
 
-	lagerData := lager.Data{}
-	if localRouteEmitters {
-		lagerData = lager.Data{"cell-id": cellID}
-	}
-	logger := logger.WithData(lagerData)
+	logger := logger.WithData(lager.Data{"cell-id": cellID})
+
 	logger.Info("start-route-emitter-loop")
 	defer logger.Info("finish-route-emitter-loop")
 
@@ -258,15 +255,29 @@ func routeEmitter(b Benchmarker, wg *sync.WaitGroup, localRouteEmitters bool, ce
 
 	ifrit.Invoke(ifrit.RunFunc(eventCountRunner(routeEmitterEventCount)))
 
+	var expectedActualLRPCount int
+	var expectedActualLRPVariation float64
+	if cellID == "" {
+		expectedActualLRPCount = expectedLRPCount
+		expectedActualLRPVariation = expectedLRPVariation
+	} else {
+		var ok bool
+		expectedActualLRPCount, ok = expectedActualLRPCounts[cellID]
+		Expect(ok).To(BeTrue())
+
+		expectedActualLRPVariation, ok = expectedActualLRPVariations[cellID]
+		Expect(ok).To(BeTrue())
+	}
+
 	for j := 0; j < numTrials; j++ {
 		sleepDuration := getSleepDuration(j, bulkCycle)
 		time.Sleep(sleepDuration)
 		b.Time("fetch all actualLRPs and schedulingInfos", func() {
 			semaphore <- struct{}{}
-			actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{})
+			actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{CellID: cellID})
 			<-semaphore
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
+			Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
 
 			semaphore <- struct{}{}
 			desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
