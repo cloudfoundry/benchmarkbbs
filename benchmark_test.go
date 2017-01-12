@@ -98,22 +98,20 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 			semaphore := make(chan struct{}, 25000)
 
 			routeEmitterEventCounts := make(map[string]*int32)
-			for i := 0; i < numReps; i++ {
-				cellID := ""
-				if localRouteEmitters {
-					cellID = fmt.Sprintf("cell-%d", i)
+			if localRouteEmitters {
+				for i := 0; i < numReps; i++ {
+					cellID := fmt.Sprintf("cell-%d", i)
+					routeEmitterEventCount := new(int32)
+					routeEmitterEventCounts[cellID] = routeEmitterEventCount
+					// start local route-emitter
+					wg.Add(1)
+					go localRouteEmitter(b, &wg, cellID, routeEmitterEventCount, semaphore, numTrials)
 				}
-
-				routeEmitterEventCount := new(int32)
-				routeEmitterEventCounts[cellID] = routeEmitterEventCount
-
-				// start route-emitter
+			} else {
 				wg.Add(1)
-				go routeEmitter(b, &wg, localRouteEmitters, cellID, routeEmitterEventCount, semaphore, numTrials)
-
-				if !localRouteEmitters {
-					break
-				}
+				routeEmitterEventCount := new(int32)
+				routeEmitterEventCounts["global"] = routeEmitterEventCount
+				go globalRouteEmitter(b, &wg, routeEmitterEventCount, semaphore, numTrials)
 			}
 
 			queue := operationq.NewSlidingQueue(numTrials)
@@ -243,31 +241,23 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 	}
 }
 
-func routeEmitter(b Benchmarker, wg *sync.WaitGroup, localRouteEmitters bool, cellID string, routeEmitterEventCount *int32, semaphore chan struct{}, numTrials int) {
+func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, routeEmitterEventCount *int32, semaphore chan struct{}, numTrials int) {
 	defer GinkgoRecover()
 
 	logger := logger.WithData(lager.Data{"cell-id": cellID})
+	logger.Info("start-local-route-emitter-loop")
 
-	logger.Info("start-route-emitter-loop")
-	defer logger.Info("finish-route-emitter-loop")
-
-	defer wg.Done()
+	defer func() {
+		logger.Info("finish-local-route-emitter-loop")
+		wg.Done()
+	}()
 
 	ifrit.Invoke(ifrit.RunFunc(eventCountRunner(routeEmitterEventCount)))
 
-	var expectedActualLRPCount int
-	var expectedActualLRPVariation float64
-	if cellID == "" {
-		expectedActualLRPCount = expectedLRPCount
-		expectedActualLRPVariation = expectedLRPVariation
-	} else {
-		var ok bool
-		expectedActualLRPCount, ok = expectedActualLRPCounts[cellID]
-		Expect(ok).To(BeTrue())
-
-		expectedActualLRPVariation, ok = expectedActualLRPVariations[cellID]
-		Expect(ok).To(BeTrue())
-	}
+	expectedActualLRPCount, ok := expectedActualLRPCounts[cellID]
+	Expect(ok).To(BeTrue())
+	expectedActualLRPVariation, ok := expectedActualLRPVariations[cellID]
+	Expect(ok).To(BeTrue())
 
 	for j := 0; j < numTrials; j++ {
 		sleepDuration := getSleepDuration(j, bulkCycle)
@@ -279,12 +269,53 @@ func routeEmitter(b Benchmarker, wg *sync.WaitGroup, localRouteEmitters bool, ce
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(actuals)).To(BeNumerically("~", expectedActualLRPCount, expectedActualLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
 
+			guids := []string{}
+			for _, actual := range actuals {
+				lrp, _ := actual.Resolve()
+				guids = append(guids, lrp.ProcessGuid)
+			}
+
+			semaphore <- struct{}{}
+			desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{
+				ProcessGuids: guids,
+			})
+			<-semaphore
+			Expect(err).NotTo(HaveOccurred())
+			Expect(desireds).To(HaveLen(len(guids)))
+
+		}, reporter.ReporterInfo{
+			MetricName: FetchActualLRPsAndSchedulingInfos,
+		})
+	}
+}
+
+func globalRouteEmitter(b Benchmarker, wg *sync.WaitGroup, routeEmitterEventCount *int32, semaphore chan struct{}, numTrials int) {
+	defer GinkgoRecover()
+
+	logger.Info("start-global-route-emitter-loop")
+
+	defer func() {
+		wg.Done()
+		logger.Info("finish-global-route-emitter-loop")
+	}()
+
+	ifrit.Invoke(ifrit.RunFunc(eventCountRunner(routeEmitterEventCount)))
+
+	for j := 0; j < numTrials; j++ {
+		sleepDuration := getSleepDuration(j, bulkCycle)
+		time.Sleep(sleepDuration)
+		b.Time("fetch all actualLRPs and schedulingInfos", func() {
+			semaphore <- struct{}{}
+			actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{})
+			<-semaphore
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(actuals)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of ActualLRPs retrieved in router-emitter")
+
 			semaphore <- struct{}{}
 			desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
 			<-semaphore
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(desireds)).To(BeNumerically("~", expectedLRPCount, expectedLRPVariation), "Number of DesiredLRPs retrieved in route-emitter")
-
 		}, reporter.ReporterInfo{
 			MetricName: FetchActualLRPsAndSchedulingInfos,
 		})
