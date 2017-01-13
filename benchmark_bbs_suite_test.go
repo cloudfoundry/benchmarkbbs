@@ -32,10 +32,11 @@ import (
 	"code.cloudfoundry.org/lager"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/coreos/go-etcd/etcd"
-	"github.com/zorkian/go-datadog-api"
+	datadog "github.com/zorkian/go-datadog-api"
 
 	_ "github.com/go-sql-driver/mysql"
 	. "github.com/onsi/ginkgo"
@@ -130,11 +131,16 @@ func TestBenchmarkBbs(t *testing.T) {
 
 	if config.AwsAccessKeyID != "" && config.AwsSecretAccessKey != "" && config.AwsBucketName != "" {
 		creds := credentials.NewStaticCredentials(config.AwsAccessKeyID, config.AwsSecretAccessKey, "")
-		s3Client := s3.New(&aws.Config{
+		sess, err := session.NewSession(aws.NewConfig())
+		if err != nil {
+			panic(fmt.Errorf("Error connecting to S3: %s\n", err))
+		}
+
+		s3Client := s3.New(sess, &aws.Config{
 			Region:      &config.AwsRegion,
 			Credentials: creds,
 		})
-		uploader := s3manager.NewUploader(&s3manager.UploadOptions{S3: s3Client})
+		uploader := s3manager.NewUploaderWithClient(s3Client)
 		reporter := reporter.NewS3Reporter(logger, config.AwsBucketName, uploader)
 		reporters = append(reporters, &reporter)
 	}
