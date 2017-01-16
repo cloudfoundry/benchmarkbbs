@@ -91,7 +91,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 
 			// start convergence
 			wg.Add(1)
-			go convergence(b, &wg, numTrials, numReps)
+			go convergence(b, logger, &wg, numTrials, numReps)
 
 			// we need to make sure we don't run out of ports so limit amount of
 			// active http requests to 25000
@@ -175,10 +175,11 @@ func nsyncBulkerLoop(b Benchmarker, wg *sync.WaitGroup, numTrials int) {
 	}
 }
 
-func convergence(b Benchmarker, wg *sync.WaitGroup, numTrials, numReps int) {
+func convergence(b Benchmarker, logger lager.Logger, wg *sync.WaitGroup, numTrials, numReps int) {
 	defer GinkgoRecover()
-	logger.Info("start-lrp-convergence-loop")
-	defer logger.Info("finish-lrp-convergence-loop")
+	logger = logger.Session("lrp-convergence-loop")
+	logger.Info("starting")
+	defer logger.Info("completed")
 	defer wg.Done()
 
 	for i := 0; i < numTrials; i++ {
