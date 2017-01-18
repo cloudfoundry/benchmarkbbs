@@ -16,6 +16,7 @@ import (
 	"code.cloudfoundry.org/bbs/db/etcd/test/etcd_helpers"
 	"code.cloudfoundry.org/bbs/encryption"
 	"code.cloudfoundry.org/consuladapter/consulrunner"
+	"code.cloudfoundry.org/durationjson"
 	"code.cloudfoundry.org/lager"
 	"code.cloudfoundry.org/lager/lagertest"
 	"github.com/cloudfoundry/storeadapter/storerunner/etcdstorerunner"
@@ -98,7 +99,7 @@ var _ = BeforeEach(func() {
 		ListenAddress:     bbsAddress,
 		AdvertiseURL:      bbsURL.String(),
 		AuctioneerAddress: auctioneerServer.URL(),
-		ReportInterval:    bbsconfig.Duration(10 * time.Millisecond),
+		ReportInterval:    durationjson.Duration(10 * time.Millisecond),
 
 		EncryptionConfig: encryption.EncryptionConfig{
 			EncryptionKeys: map[string]string{"label": "key"},

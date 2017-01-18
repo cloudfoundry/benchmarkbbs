@@ -5,6 +5,7 @@ import (
 	"os"
 
 	bbsconfig "code.cloudfoundry.org/bbs/cmd/bbs/config"
+	"code.cloudfoundry.org/durationjson"
 	"code.cloudfoundry.org/lager/lagerflags"
 )
 
@@ -17,10 +18,10 @@ type BenchmarkBBSConfig struct {
 	ErrorTolerance     float64 `json:"error_tolerance,omitempty"`
 	LocalRouteEmitters bool    `json:"local_route_emitters"`
 
-	BBSAddress           string             `json:"bbs_address,omitempty"`
-	BBSClientCert        string             `json:"bbs_client_cert,omitempty"`
-	BBSClientKey         string             `json:"bbs_client_key,omitempty"`
-	BBSClientHTTPTimeout bbsconfig.Duration `json:"bbs_client_http_timeout,omitempty"`
+	BBSAddress           string                `json:"bbs_address,omitempty"`
+	BBSClientCert        string                `json:"bbs_client_cert,omitempty"`
+	BBSClientKey         string                `json:"bbs_client_key,omitempty"`
+	BBSClientHTTPTimeout durationjson.Duration `json:"bbs_client_http_timeout,omitempty"`
 
 	AwsAccessKeyID     string `json:"aws_access_key_id,omitempty"`
 	AwsSecretAccessKey string `json:"aws_secret_access_key,omitempty"`
