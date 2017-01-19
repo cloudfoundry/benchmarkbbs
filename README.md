@@ -20,7 +20,7 @@ bosh stop cc_bridge_z1 0
 ```
 
 You will also need to disable convergence on the BBS. This can be done by setting
-the `properties.diego.bbs.convergence.repeate_interval_in_seconds` property in the
+the `properties.diego.bbs.convergence.repeat_interval_in_seconds` property in the
 diego deployment manifest to an arbitrarily high value so that convergence will not
 execute during the test run.
 
