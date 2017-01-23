@@ -92,8 +92,7 @@ func (r *S3Reporter) SpecDidComplete(specSummary *ginkgotypes.SpecSummary) {
 			})
 
 			if err != nil {
-				r.logger.Error("failed-uploading-metric-to-s3", err)
-				continue
+				r.logger.Fatal("failed-uploading-metric-to-s3", err)
 			}
 
 			r.logger.Debug("successfully-uploaded-metric-to-s3", lager.Data{
