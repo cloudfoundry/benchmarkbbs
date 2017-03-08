@@ -1,6 +1,7 @@
 package benchmarkbbs_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -10,8 +11,14 @@ import (
 
 	"code.cloudfoundry.org/bbs/models"
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
+	"code.cloudfoundry.org/clock"
+	"code.cloudfoundry.org/executor"
 	"code.cloudfoundry.org/lager"
+	"code.cloudfoundry.org/locket"
+	"code.cloudfoundry.org/locket/lock"
+	locketmodels "code.cloudfoundry.org/locket/models"
 	"code.cloudfoundry.org/operationq"
+	uuid "github.com/nu7hatch/gouuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/tedsuo/ifrit"
@@ -19,13 +26,15 @@ import (
 )
 
 const (
+	CellPresenceFetching              = "CellPresenceFetching"
+	CellPresenceSetting               = "CellPresenceSetting"
+	ConvergenceGathering              = "ConvergenceGathering"
+	FetchActualLRPsAndSchedulingInfos = "FetchActualLRPsAndSchedulingInfos"
+	NsyncBulkerFetching               = "NsyncBulkerFetching"
 	RepBulkFetching                   = "RepBulkFetching"
 	RepBulkLoop                       = "RepBulkLoop"
 	RepClaimActualLRP                 = "RepClaimActualLRP"
 	RepStartActualLRP                 = "RepStartActualLRP"
-	NsyncBulkerFetching               = "NsyncBulkerFetching"
-	ConvergenceGathering              = "ConvergenceGathering"
-	FetchActualLRPsAndSchedulingInfos = "FetchActualLRPsAndSchedulingInfos"
 )
 
 var bulkCycle = 30 * time.Second
@@ -83,7 +92,16 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 		})
 
 		Measure("data for benchmarks", func(b Benchmarker) {
+			for i := 0; i < numReps; i++ {
+				cellID := fmt.Sprintf("cell-%d", i)
+				cellRegistrar(b, locketClient, cellID)
+			}
+
 			wg := sync.WaitGroup{}
+
+			// start fetching cell presences
+			wg.Add(1)
+			go ensureCellsRegistered(b, &wg, numTrials, numReps)
 
 			// start nsync
 			wg.Add(1)
@@ -138,6 +156,11 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 				return atomic.LoadInt32(&totalRan)
 			}, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
 
+			// When you read the following test you might think: "Why are we checking
+			// that each route emitter receives ALL the events? Shouldn't it receive
+			// only the ones for its cell??????"
+			// Well, yes, but they currently receive ALL since we don't have
+			// server-side filtering for the event streams it subscribes to.
 			for _, v := range routeEmitterEventCounts {
 				Eventually(func() int32 {
 					return atomic.LoadInt32(v)
@@ -154,6 +177,26 @@ func getSleepDuration(loopCounter int, cycleTime time.Duration) time.Duration {
 		sleepDuration = time.Duration(numMilli) * time.Millisecond
 	}
 	return sleepDuration
+}
+
+func ensureCellsRegistered(b Benchmarker, wg *sync.WaitGroup, numTrials, numReps int) {
+	defer GinkgoRecover()
+	logger.Info("start-fetching-cell-presences")
+	defer logger.Info("finish-fetching-cell-presences")
+	defer wg.Done()
+
+	for i := 0; i < numTrials; i++ {
+		sleepDuration := getSleepDuration(i, bulkCycle)
+		time.Sleep(sleepDuration)
+		b.Time("fetch all the cell presences", func() {
+			defer GinkgoRecover()
+			cells, err := bbsClient.Cells(logger)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cells).To(HaveLen(numReps))
+		}, reporter.ReporterInfo{
+			MetricName: CellPresenceFetching,
+		})
+	}
 }
 
 func nsyncBulkerLoop(b Benchmarker, wg *sync.WaitGroup, numTrials int) {
@@ -240,6 +283,50 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 			MetricName: RepBulkLoop,
 		})
 	}
+}
+
+func cellRegistrar(b Benchmarker, locketClient locketmodels.LocketClient, cellID string) {
+	defer GinkgoRecover()
+
+	guid, err := uuid.NewV4()
+	Expect(err).NotTo(HaveOccurred())
+
+	resources := executor.ExecutorResources{
+		MemoryMB:   1000,
+		DiskMB:     2000,
+		Containers: 300,
+	}
+	cellCapacity := models.NewCellCapacity(int32(resources.MemoryMB), int32(resources.DiskMB), int32(resources.Containers))
+	cellPresence := models.NewCellPresence(cellID, cellID+".address", cellID+".url",
+		"z1", cellCapacity, []string{"providers"},
+		[]string{"cflinuxfs9"}, []string{}, []string{})
+
+	payload, err := json.Marshal(cellPresence)
+	Expect(err).NotTo(HaveOccurred())
+
+	lockPayload := &locketmodels.Resource{
+		Key:   cellID,
+		Owner: guid.String(),
+		Value: string(payload),
+		Type:  locketmodels.PresenceType,
+	}
+
+	lockRunner := lock.NewLockRunner(
+		logger,
+		locketClient,
+		lockPayload,
+		int64(locket.DefaultSessionTTL/time.Second),
+		clock.NewClock(),
+		locket.RetryInterval,
+	)
+
+	var lockProcess ifrit.Process
+	b.Time("acquiring lock", func() {
+		defer GinkgoRecover()
+		lockProcess = ginkgomon.Invoke(lockRunner)
+	}, reporter.ReporterInfo{
+		MetricName: CellPresenceSetting,
+	})
 }
 
 func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, routeEmitterEventCount *int32, semaphore chan struct{}, numTrials int) {

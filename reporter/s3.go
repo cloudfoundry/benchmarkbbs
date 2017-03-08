@@ -56,7 +56,8 @@ func (r *S3Reporter) SpecDidComplete(specSummary *ginkgotypes.SpecSummary) {
 	if specSummary.Passed() && specSummary.IsMeasurement {
 		for _, measurement := range specSummary.Measurements {
 			if measurement.Info == nil {
-				panic(fmt.Sprintf("%#v", specSummary))
+				r.logger.Error("failed-meaurement-info-is-nil", errors.New("measurement-info-is-nil"))
+				continue
 			}
 
 			info, ok := measurement.Info.(ReporterInfo)

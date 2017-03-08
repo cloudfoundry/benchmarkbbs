@@ -7,40 +7,39 @@ import (
 	bbsconfig "code.cloudfoundry.org/bbs/cmd/bbs/config"
 	"code.cloudfoundry.org/durationjson"
 	"code.cloudfoundry.org/lager/lagerflags"
+	"code.cloudfoundry.org/locket"
 )
 
 type BenchmarkBBSConfig struct {
-	NumTrials          int     `json:"num_trials,omitempty"`
-	NumReps            int     `json:"num_reps,omitempty"`
-	NumPopulateWorkers int     `json:"num_populate_workers,omitempty"`
-	DesiredLRPs        int     `json:"desired_lrps,omitempty"`
-	PercentWrites      float64 `json:"percent_writes,omitempty"`
-	ErrorTolerance     float64 `json:"error_tolerance,omitempty"`
-	LocalRouteEmitters bool    `json:"local_route_emitters"`
-
+	AwsAccessKeyID       string                `json:"aws_access_key_id,omitempty"`
+	AwsBucketName        string                `json:"aws_bucket_name,omitempty"`
+	AwsRegion            string                `json:"aws_region,omitempty"`
+	AwsSecretAccessKey   string                `json:"aws_secret_access_key,omitempty"`
 	BBSAddress           string                `json:"bbs_address,omitempty"`
+	BBSCACert            string                `json:"bbs_ca_cert,omitempty"`
 	BBSClientCert        string                `json:"bbs_client_cert,omitempty"`
-	BBSClientKey         string                `json:"bbs_client_key,omitempty"`
 	BBSClientHTTPTimeout durationjson.Duration `json:"bbs_client_http_timeout,omitempty"`
-
-	AwsAccessKeyID     string `json:"aws_access_key_id,omitempty"`
-	AwsSecretAccessKey string `json:"aws_secret_access_key,omitempty"`
-	AwsBucketName      string `json:"aws_bucket_name,omitempty"`
-	AwsRegion          string `json:"aws_region,omitempty"`
-
-	DataDogAPIKey string `json:"datadog_api_key,omitempty"`
-	DataDogAppKey string `json:"datadog_app_key,omitempty"`
-	MetricPrefix  string `json:"metric_prefix,omitempty"`
-
-	LogFilename string `json:"log_filename,omitempty"`
-
-	bbsconfig.BBSConfig // used to get the encryption flags, database, etcd, etc.
+	BBSClientKey         string                `json:"bbs_client_key,omitempty"`
+	DataDogAPIKey        string                `json:"datadog_api_key,omitempty"`
+	DataDogAppKey        string                `json:"datadog_app_key,omitempty"`
+	DesiredLRPs          int                   `json:"desired_lrps,omitempty"`
+	ErrorTolerance       float64               `json:"error_tolerance,omitempty"`
+	LocalRouteEmitters   bool                  `json:"local_route_emitters"`
+	LocketAddress        string                `json:"locket_address,omitempty"`
+	LogFilename          string                `json:"log_filename,omitempty"`
+	MetricPrefix         string                `json:"metric_prefix,omitempty"`
+	NumPopulateWorkers   int                   `json:"num_populate_workers,omitempty"`
+	NumReps              int                   `json:"num_reps,omitempty"`
+	NumTrials            int                   `json:"num_trials,omitempty"`
+	PercentWrites        float64               `json:"percent_writes,omitempty"`
+	bbsconfig.BBSConfig                        // used to get the encryption flags, database, etcd, etc.
 	lagerflags.LagerConfig
+	locket.ClientLocketConfig
 }
 
 func DefaultConfig() BenchmarkBBSConfig {
 	return BenchmarkBBSConfig{
-		ErrorTolerance:       0.5,
+		ErrorTolerance:       0.05,
 		NumTrials:            10,
 		NumReps:              10,
 		NumPopulateWorkers:   10,
