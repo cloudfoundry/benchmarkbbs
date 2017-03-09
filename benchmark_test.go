@@ -94,7 +94,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 		Measure("data for benchmarks", func(b Benchmarker) {
 			for i := 0; i < numReps; i++ {
 				cellID := fmt.Sprintf("cell-%d", i)
-				cellRegistrar(b, locketClient, cellID)
+				cellRegistrar(b, cellID)
 			}
 
 			wg := sync.WaitGroup{}
@@ -285,7 +285,7 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 	}
 }
 
-func cellRegistrar(b Benchmarker, locketClient locketmodels.LocketClient, cellID string) {
+func cellRegistrar(b Benchmarker, cellID string) {
 	defer GinkgoRecover()
 
 	guid, err := uuid.NewV4()
@@ -311,6 +311,9 @@ func cellRegistrar(b Benchmarker, locketClient locketmodels.LocketClient, cellID
 		Type:  locketmodels.PresenceType,
 	}
 
+	locketClient, err := locket.NewClient(logger, config.ClientLocketConfig)
+	Expect(err).NotTo(HaveOccurred())
+
 	lockRunner := lock.NewLockRunner(
 		logger,
 		locketClient,
@@ -320,10 +323,10 @@ func cellRegistrar(b Benchmarker, locketClient locketmodels.LocketClient, cellID
 		locket.RetryInterval,
 	)
 
-	var lockProcess ifrit.Process
 	b.Time("acquiring lock", func() {
 		defer GinkgoRecover()
-		lockProcess = ginkgomon.Invoke(lockRunner)
+		lockProcess := ifrit.Background(lockRunner)
+		Eventually(lockProcess.Ready()).Should(BeClosed())
 	}, reporter.ReporterInfo{
 		MetricName: CellPresenceSetting,
 	})

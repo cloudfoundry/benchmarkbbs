@@ -25,7 +25,6 @@ type BenchmarkBBSConfig struct {
 	DesiredLRPs          int                   `json:"desired_lrps,omitempty"`
 	ErrorTolerance       float64               `json:"error_tolerance,omitempty"`
 	LocalRouteEmitters   bool                  `json:"local_route_emitters"`
-	LocketAddress        string                `json:"locket_address,omitempty"`
 	LogFilename          string                `json:"log_filename,omitempty"`
 	MetricPrefix         string                `json:"metric_prefix,omitempty"`
 	NumPopulateWorkers   int                   `json:"num_populate_workers,omitempty"`

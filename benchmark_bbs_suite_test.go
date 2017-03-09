@@ -17,8 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc"
-
 	"code.cloudfoundry.org/bbs"
 	"code.cloudfoundry.org/bbs/db"
 	etcddb "code.cloudfoundry.org/bbs/db/etcd"
@@ -32,7 +30,6 @@ import (
 	"code.cloudfoundry.org/cfhttp"
 	"code.cloudfoundry.org/clock"
 	"code.cloudfoundry.org/lager"
-	locketmodels "code.cloudfoundry.org/locket/models"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -62,7 +59,6 @@ var (
 	sqlDB           *sqldb.SQLDB
 	activeDB        db.DB
 	bbsClient       bbs.InternalClient
-	locketClient    locketmodels.LocketClient
 	dataDogClient   *datadog.Client
 	dataDogReporter reporter.DataDogReporter
 	reporters       []Reporter
@@ -199,11 +195,7 @@ var _ = BeforeSuite(func() {
 		cleanupETCD()
 	}
 
-	conn, err := grpc.Dial(config.LocketAddress, grpc.WithInsecure())
-	Expect(err).NotTo(HaveOccurred())
-	locketClient = locketmodels.NewLocketClient(conn)
-
-	_, err = bbsClient.Domains(logger)
+	_, err := bbsClient.Domains(logger)
 	Expect(err).NotTo(HaveOccurred())
 
 	expectedActualLRPVariations = make(map[string]float64)
