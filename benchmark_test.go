@@ -326,7 +326,7 @@ func cellRegistrar(b Benchmarker, cellID string) {
 	b.Time("acquiring lock", func() {
 		defer GinkgoRecover()
 		lockProcess := ifrit.Background(lockRunner)
-		Eventually(lockProcess.Ready()).Should(BeClosed())
+		Eventually(lockProcess.Ready()).Should(BeClosed(), "cell "+cellID+" failed to acquire lock")
 	}, reporter.ReporterInfo{
 		MetricName: CellPresenceSetting,
 	})
