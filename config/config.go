@@ -58,6 +58,9 @@ func NewBenchmarkBBSConfig(configPath string) (BenchmarkBBSConfig, error) {
 	if err != nil {
 		return BenchmarkBBSConfig{}, err
 	}
+
+	defer configFile.Close()
+
 	decoder := json.NewDecoder(configFile)
 
 	err = decoder.Decode(&benchmarkBBSConfig)
