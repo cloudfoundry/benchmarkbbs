@@ -27,7 +27,8 @@ execute during the test run.
 #### Create Configuration JSON
 
 In order to run the benchmark test suite, you will need to create the necessary configuration file.
-For example, on bosh-lite using ETCD as the backing store:
+
+Example bosh-lite configuration file for a MySQL Backend:
 
 ```bash
 cat > config.json <<EOF
@@ -46,9 +47,34 @@ cat > config.json <<EOF
   "active_key_label": "key1",
   "log_level": "info",
   "log_filename": "test-output.log",
-  "etcd_cluster": "https://10.244.16.2:4001",
-  "etcd_cert_file": "$GOPATH/manifest-generation/bosh-lite-stubs/etcd-certs/client.crt",
-  "etcd_key_file": "$GOPATH/manifest-generation/bosh-lite-stubs/etcd-certs/client.key",
+  "database_driver": "mysql",
+  "database_connection_string": "diego:diego@tcp(10.244.7.2:3306)/diego"
+}
+EOF
+export CONFIG=$PWD/config.json
+```
+
+Example bosh-lite configuration file for a Postgres Backend:
+
+```bash
+cat > config.json <<EOF
+{
+  "desired_lrps": 5000,
+  "num_trials": 10,
+  "num_reps": 5,
+  "num_populate_workers": 10,
+  "bbs_address": "https://10.244.16.2:8889",
+  "bbs_client_http_timeout": "10s",
+  "bbs_client_cert": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt",
+  "bbs_client_key": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key",
+  "encryption_keys": {
+    "key1": "a secure passphrase"
+  },
+  "active_key_label": "key1",
+  "log_level": "info",
+  "log_filename": "test-output.log",
+  "database_driver": "postgres",
+  "database_connection_string": "postgres://diego:admin@10.244.0.30:5524/diego"
 }
 EOF
 export CONFIG=$PWD/config.json
@@ -86,76 +112,6 @@ To simulate the behavior of having local route emitters on each cell, the follow
 
 ```
   "local_route_emitters": true,
-```
-
-### MySQL Backend
-
-To test with the experimental MySQL backend, add the `"database_connection_string"`
-property instead of the properties that start with `etcd`. For example, for bosh-lite:
-
-```bash
-cat > config.json <<EOF
-{
-  "desired_lrps": 5000,
-  "num_trials": 10,
-  "num_reps": 5,
-  "num_populate_workers": 10,
-  "bbs_address": "https://10.244.16.2:8889",
-  "bbs_client_http_timeout": "10s",
-  "bbs_client_cert": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt",
-  "bbs_client_key": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key",
-  "encryption_keys": {
-    "key1": "a secure passphrase"
-  },
-  "active_key_label": "key1",
-  "log_level": "info",
-  "log_filename": "test-output.log",
-  "database_driver": "mysql",
-  "database_connection_string": "diego:diego@tcp(10.244.7.2:3306)/diego"
-}
-EOF
-export CONFIG=$PWD/config.json
-```
-
-Then run the test suite with ginkgo:
-
-```
-ginkgo -- -config=$CONFIG
-```
-
-### Postgres Backend
-
-To test with the experimental Postgres backend, add the `"database_connection_string"`
-property instead of the properties that start with `etcd`. For example, for bosh-lite:
-
-```bash
-cat > config.json <<EOF
-{
-  "desired_lrps": 5000,
-  "num_trials": 10,
-  "num_reps": 5,
-  "num_populate_workers": 10,
-  "bbs_address": "https://10.244.16.2:8889",
-  "bbs_client_http_timeout": "10s",
-  "bbs_client_cert": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt",
-  "bbs_client_key": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key",
-  "encryption_keys": {
-    "key1": "a secure passphrase"
-  },
-  "active_key_label": "key1",
-  "log_level": "info",
-  "log_filename": "test-output.log",
-  "database_driver": "postgres",
-  "database_connection_string": "postgres://diego:admin@10.244.0.30:5524/diego"
-}
-EOF
-export CONFIG=$PWD/config.json
-```
-
-Then run the test suite with ginkgo:
-
-```
-ginkgo -- -config=$CONFIG
 ```
 
 ### Metrics

@@ -2,24 +2,20 @@ package benchmarkbbs_test
 
 import (
 	"crypto/rand"
-	"crypto/tls"
 	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
 	"code.cloudfoundry.org/bbs"
 	"code.cloudfoundry.org/bbs/db"
-	etcddb "code.cloudfoundry.org/bbs/db/etcd"
 	"code.cloudfoundry.org/bbs/db/sqldb"
 	"code.cloudfoundry.org/bbs/encryption"
 	"code.cloudfoundry.org/bbs/format"
@@ -34,7 +30,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/coreos/go-etcd/etcd"
 	"github.com/zorkian/go-datadog-api"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -54,8 +49,6 @@ var (
 	config benchmarkconfig.BenchmarkBBSConfig
 
 	logger          lager.Logger
-	etcdClient      *etcd.Client
-	etcdDB          *etcddb.ETCDDB
 	sqlDB           *sqldb.SQLDB
 	activeDB        db.DB
 	bbsClient       bbs.InternalClient
@@ -157,14 +150,7 @@ func initializeActiveDB() *sql.DB {
 	}
 
 	if config.DatabaseConnectionString == "" {
-		etcdOptions, err := config.ETCDConfig.Validate()
-		Expect(err).NotTo(HaveOccurred())
-
-		etcdClient = initializeEtcdClient(logger, etcdOptions)
-		etcdDB = initializeETCDDB(logger, etcdClient)
-
-		activeDB = etcdDB
-		return nil
+		logger.Fatal("no-sql-configuration", errors.New("no-sql-configuration"))
 	}
 
 	if config.DatabaseDriver == "postgres" && !strings.Contains(config.DatabaseConnectionString, "sslmode") {
@@ -189,104 +175,67 @@ func initializeActiveDB() *sql.DB {
 var _ = BeforeSuite(func() {
 	bbsClient = initializeBBSClient(logger, time.Duration(config.BBSClientHTTPTimeout))
 
-	if conn := initializeActiveDB(); conn != nil {
-		cleanupSQLDB(conn)
-	} else {
-		cleanupETCD()
-	}
-
-	_, err := bbsClient.Domains(logger)
-	Expect(err).NotTo(HaveOccurred())
-
 	expectedActualLRPVariations = make(map[string]float64)
 
-	if config.DesiredLRPs > 0 {
-		desiredLRPGenerator := generator.NewDesiredLRPGenerator(
-			config.ErrorTolerance,
-			config.MetricPrefix,
-			config.NumPopulateWorkers,
-			bbsClient,
-			dataDogClient,
-		)
-		expectedLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, config.NumReps, config.DesiredLRPs)
-		Expect(err).NotTo(HaveOccurred())
-		expectedLRPVariation = float64(expectedLRPCount) * config.ErrorTolerance
+	conn := initializeActiveDB()
 
-		for k, v := range expectedActualLRPCounts {
-			expectedActualLRPVariations[k] = float64(v) * config.ErrorTolerance
-		}
-	}
-})
-
-var _ = AfterSuite(func() {
-	if config.DatabaseConnectionString == "" {
-		cleanupETCD()
-	} else {
-		sqlConn, err := sql.Open(config.DatabaseDriver, config.DatabaseConnectionString)
-		if err != nil {
-			logger.Fatal("failed-to-open-sql", err)
-		}
-		sqlConn.SetMaxOpenConns(1)
-		sqlConn.SetMaxIdleConns(1)
-
-		err = sqlConn.Ping()
-		Expect(err).NotTo(HaveOccurred())
-		cleanupSQLDB(sqlConn)
-	}
-})
-
-func initializeEtcdClient(logger lager.Logger, etcdOptions *etcddb.ETCDOptions) *etcd.Client {
-	var etcdClient *etcd.Client
-	var tr *http.Transport
-
-	if etcdOptions.IsSSL {
-		if etcdOptions.CertFile == "" || etcdOptions.KeyFile == "" {
-			logger.Fatal("failed-to-construct-etcd-tls-client", errors.New("Require both cert and key path"))
-		}
-
+	if config.ReseedDatabase {
 		var err error
-		etcdClient, err = etcd.NewTLSClient(etcdOptions.ClusterUrls, etcdOptions.CertFile, etcdOptions.KeyFile, etcdOptions.CAFile)
-		if err != nil {
-			logger.Fatal("failed-to-construct-etcd-tls-client", err)
-		}
 
-		tlsCert, err := tls.LoadX509KeyPair(etcdOptions.CertFile, etcdOptions.KeyFile)
-		if err != nil {
-			logger.Fatal("failed-to-construct-etcd-tls-client", err)
-		}
+		cleanupSQLDB(conn)
 
-		tlsConfig := &tls.Config{
-			Certificates:       []tls.Certificate{tlsCert},
-			InsecureSkipVerify: true,
-			ClientSessionCache: tls.NewLRUClientSessionCache(etcdOptions.ClientSessionCacheSize),
+		if config.DesiredLRPs > 0 {
+			desiredLRPGenerator := generator.NewDesiredLRPGenerator(
+				config.ErrorTolerance,
+				config.MetricPrefix,
+				config.NumPopulateWorkers,
+				bbsClient,
+				dataDogClient,
+			)
+
+			expectedLRPCount, expectedActualLRPCounts, err = desiredLRPGenerator.Generate(logger, config.NumReps, config.DesiredLRPs)
+			Expect(err).NotTo(HaveOccurred())
 		}
-		tr = &http.Transport{
-			TLSClientConfig:     tlsConfig,
-			Dial:                etcdClient.DefaultDial,
-			MaxIdleConnsPerHost: etcdOptions.MaxIdleConnsPerHost,
-		}
-		etcdClient.SetTransport(tr)
 	} else {
-		etcdClient = etcd.NewClient(etcdOptions.ClusterUrls)
-	}
-	etcdClient.SetConsistency(etcd.STRONG_CONSISTENCY)
+		expectedActualLRPCounts = make(map[string]int)
+		query := `
+			SELECT
+				COUNT(*)
+			FROM desired_lrps
+		`
+		res := conn.QueryRow(query)
+		err := res.Scan(&expectedLRPCount)
+		Expect(err).NotTo(HaveOccurred())
 
-	return etcdClient
-}
+		query = `
+			SELECT
+				cell_id, COUNT(*)
+			FROM actual_lrps
+			GROUP BY cell_id
+		`
+		rows, err := conn.Query(query)
+		Expect(err).NotTo(HaveOccurred())
 
-func initializeETCDDB(logger lager.Logger, etcdClient *etcd.Client) *etcddb.ETCDDB {
-	key, keys, err := config.EncryptionConfig.Parse()
-	if err != nil {
-		logger.Fatal("cannot-setup-encryption", err)
-	}
-	keyManager, err := encryption.NewKeyManager(key, keys)
-	if err != nil {
-		logger.Fatal("cannot-setup-encryption", err)
-	}
-	cryptor := encryption.NewCryptor(keyManager, rand.Reader)
+		defer rows.Close()
+		for rows.Next() {
+			var cellId string
+			var count int
+			err = rows.Scan(&cellId, &count)
+			Expect(err).NotTo(HaveOccurred())
 
-	return etcddb.NewETCD(format.ENCRYPTED_PROTO, 1000, 1000, 1*time.Minute, cryptor, etcddb.NewStoreClient(etcdClient), clock.NewClock())
-}
+			expectedActualLRPCounts[cellId] = count
+		}
+	}
+
+	if float64(expectedLRPCount) < float64(config.DesiredLRPs)*config.ErrorTolerance {
+		Fail(fmt.Sprintf("Error rate of %.3f for actuals exceeds tolerance of %.3f", float64(expectedLRPCount/config.DesiredLRPs), config.ErrorTolerance))
+	}
+
+	expectedLRPVariation = float64(expectedLRPCount) * config.ErrorTolerance
+	for k, v := range expectedActualLRPCounts {
+		expectedActualLRPVariations[k] = float64(v) * config.ErrorTolerance
+	}
+})
 
 func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
 	key, keys, err := config.EncryptionConfig.Parse()
@@ -334,24 +283,6 @@ func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration
 		logger.Fatal("Failed to configure secure BBS client", err)
 	}
 	return bbsClient
-}
-
-func purge(key string) {
-	_, err := etcdClient.Delete(key, true)
-	if err != nil {
-		matches, matchErr := regexp.Match(".*Key not found.*", []byte(err.Error()))
-		if matchErr != nil {
-			Fail(matchErr.Error())
-		}
-		if !matches {
-			Fail(err.Error())
-		}
-	}
-}
-
-func cleanupETCD() {
-	purge("/v1/desired_lrp")
-	purge("/v1/actual")
 }
 
 func cleanupSQLDB(conn *sql.DB) {

@@ -31,24 +31,23 @@ type BenchmarkBBSConfig struct {
 	NumReps              int                   `json:"num_reps,omitempty"`
 	NumTrials            int                   `json:"num_trials,omitempty"`
 	PercentWrites        float64               `json:"percent_writes,omitempty"`
-	bbsconfig.BBSConfig                        // used to get the encryption flags, database, etcd, etc.
+	ReseedDatabase       bool                  `json:"reseed_database,omitempty"`
+	bbsconfig.BBSConfig                        // used to get the encryption flags, database, etc.
 	lagerflags.LagerConfig
 	locket.ClientLocketConfig
 }
 
 func DefaultConfig() BenchmarkBBSConfig {
 	return BenchmarkBBSConfig{
-		ErrorTolerance:       0.05,
-		NumTrials:            10,
-		NumReps:              10,
-		NumPopulateWorkers:   10,
-		DesiredLRPs:          0,
-		PercentWrites:        5.0,
-		BBSClientHTTPTimeout: 0,
-		LocalRouteEmitters:   false,
-		AwsRegion:            "us-west-1",
-		LagerConfig:          lagerflags.DefaultLagerConfig(),
-		BBSConfig:            bbsconfig.DefaultConfig(),
+		AwsRegion:          "us-west-1",
+		BBSConfig:          bbsconfig.DefaultConfig(),
+		ErrorTolerance:     0.05,
+		LagerConfig:        lagerflags.DefaultLagerConfig(),
+		NumPopulateWorkers: 10,
+		NumReps:            10,
+		NumTrials:          10,
+		PercentWrites:      5.0,
+		ReseedDatabase:     true,
 	}
 }
 
