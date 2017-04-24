@@ -1,9 +1,14 @@
 ## BBS Benchmark
 
-**Note**: This repository should be imported as `code.cloudfoundry.org/benchmarkbbs`.
+**Note**: This repo is meant to be used inside a GOPATH that points to a locally cloned [diego-release](https://github.com/cloudfoundry/diego-release). Alternatively you can use the [generate-benchmarks-manifest script](https://github.com/cloudfoundry/diego-release/blob/develop/scripts/generate-benchmarks-manifest) from `diego-release` to generate a benchmark deployment manifest. Then, follow these instructions to deploy the benchmark errand and run it:
+
+```
+bosh deployment /path/to/diego-benchmarks.yml
+bosh deploy
+bosh run errand benchmark-bbs
+```
 
 This test suite simulates the load of a CF + Diego deployment against a Diego BBS API server.
-
 
 ### Running the Tests
 
