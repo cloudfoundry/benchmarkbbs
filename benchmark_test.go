@@ -311,7 +311,12 @@ func cellRegistrar(b Benchmarker, cellID string) {
 		Type:  locketmodels.PresenceType,
 	}
 
-	locketClient, err := locket.NewClient(logger, config.ClientLocketConfig)
+	var locketClient locketmodels.LocketClient
+	if config.SkipCertVerify {
+		locketClient, err = locket.NewClientSkipCertVerify(logger, config.ClientLocketConfig)
+	} else {
+		locketClient, err = locket.NewClient(logger, config.ClientLocketConfig)
+	}
 	Expect(err).NotTo(HaveOccurred())
 
 	lockRunner := lock.NewLockRunner(

@@ -20,6 +20,7 @@ type BenchmarkBBSConfig struct {
 	BBSClientCert        string                `json:"bbs_client_cert,omitempty"`
 	BBSClientHTTPTimeout durationjson.Duration `json:"bbs_client_http_timeout,omitempty"`
 	BBSClientKey         string                `json:"bbs_client_key,omitempty"`
+	SkipCertVerify       bool                  `json:"skip_cert_verify"`
 	DataDogAPIKey        string                `json:"datadog_api_key,omitempty"`
 	DataDogAppKey        string                `json:"datadog_app_key,omitempty"`
 	DesiredLRPs          int                   `json:"desired_lrps,omitempty"`
@@ -48,6 +49,7 @@ func DefaultConfig() BenchmarkBBSConfig {
 		NumTrials:          10,
 		PercentWrites:      5.0,
 		ReseedDatabase:     true,
+		SkipCertVerify:     false,
 	}
 }
 

@@ -22,6 +22,7 @@ Before you run these tests, stop the Diego Brain and CC-Bridge VMs:
 ```
 bosh stop brain_z1 0
 bosh stop cc_bridge_z1 0
+bosh stop cell_z1 0
 ```
 
 You will also need to disable convergence on the BBS. This can be done by setting
@@ -46,6 +47,10 @@ cat > config.json <<EOF
   "bbs_client_http_timeout": "10s",
   "bbs_client_cert": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt",
   "bbs_client_key": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key",
+  "locket_address": "10.244.16.2:8891",
+  "locket_client_cert_file": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt",
+  "locket_client_key_file": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key",
+  "skip_cert_verify": true,
   "encryption_keys": {
     "key1": "a secure passphrase"
   },
@@ -72,6 +77,10 @@ cat > config.json <<EOF
   "bbs_client_http_timeout": "10s",
   "bbs_client_cert": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt",
   "bbs_client_key": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key",
+  "locket_address": "10.244.16.2:8891",
+  "locket_client_cert_file": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.crt",
+  "locket_client_key_file": "$GOPATH/manifest-generation/bosh-lite-stubs/bbs-certs/client.key",
+  "skip_cert_verify": true,
   "encryption_keys": {
     "key1": "a secure passphrase"
   },
