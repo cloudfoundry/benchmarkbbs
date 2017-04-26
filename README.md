@@ -15,9 +15,24 @@ This test suite simulates the load of a CF + Diego deployment against a Diego BB
 The following instructions demonstrate how to run the BBS benchmarks against
 a CF + Diego deployment on [BOSH-Lite](https://github.com/cloudfoundry/bosh-lite).
 
+#### Disable Convergence and Enable Locket
+
+To prevent it from interfering with the test data, the BBS should run with
+convergence disabled. This can be done by setting the
+`properties.diego.bbs.convergence.repeat_interval_in_seconds` property in the
+Diego deployment manifest to a sufficiently large value (for example, `1000000`)
+so that convergence will not execute during the test run.
+
+The BBS Benchmark test suite now also maintains cell registrations with the Locket
+service, so Locket must be deployed before running it. This can be done via the
+`-Q` option on the Diego manifest-generation script.
+
+
 #### Stop the Brain and Bridge VMs
 
-Before you run these tests, stop the Diego Brain and CC-Bridge VMs:
+Before running these tests, the Diego Brain, CC-Bridge, and Cell VMs should be
+stopped to prevent them from interfering with the test data. On a BOSH-Lite
+deployment, this can be done by running the following BOSH commands:
 
 ```
 bosh stop brain_z1 0
@@ -25,16 +40,12 @@ bosh stop cc_bridge_z1 0
 bosh stop cell_z1 0
 ```
 
-You will also need to disable convergence on the BBS. This can be done by setting
-the `properties.diego.bbs.convergence.repeat_interval_in_seconds` property in the
-diego deployment manifest to an arbitrarily high value so that convergence will not
-execute during the test run.
 
 #### Create Configuration JSON
 
 In order to run the benchmark test suite, you will need to create the necessary configuration file.
 
-Example bosh-lite configuration file for a MySQL Backend:
+Example BOSH-Lite configuration file for a MySQL Backend:
 
 ```bash
 cat > config.json <<EOF
@@ -64,7 +75,7 @@ EOF
 export CONFIG=$PWD/config.json
 ```
 
-Example bosh-lite configuration file for a Postgres Backend:
+Example BOSH-Lite configuration file for a Postgres Backend:
 
 ```bash
 cat > config.json <<EOF
