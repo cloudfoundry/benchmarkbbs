@@ -319,7 +319,7 @@ func cellRegistrar(b Benchmarker, cellID string) {
 	}
 	Expect(err).NotTo(HaveOccurred())
 
-	lockRunner := lock.NewLockRunner(
+	lockRunner := lock.NewPresenceRunner(
 		logger,
 		locketClient,
 		lockPayload,
