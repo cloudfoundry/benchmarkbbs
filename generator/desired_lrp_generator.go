@@ -92,7 +92,7 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 				cellID,
 			)
 
-			netInfo := models.NewActualLRPNetInfo("1.2.3.4", models.NewPortMapping(61999, 8080))
+			netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.NewPortMapping(61999, 8080))
 			actualStartErrCh <- newStampedError(
 				g.bbsClient.StartActualLRP(logger, &models.ActualLRPKey{Domain: desired.Domain, ProcessGuid: desired.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo),
 				id,
