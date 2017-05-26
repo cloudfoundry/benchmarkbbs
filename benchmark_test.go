@@ -37,13 +37,30 @@ const (
 	RepStartActualLRP                 = "RepStartActualLRP"
 )
 
-var bulkCycle = 30 * time.Second
-var eventCount int32 = 0
-var expectedEventCount int32 = 0
+var (
+	bulkCycle               = 30 * time.Second
+	eventCount              = int32(0)
+	expectedEventCount      = int32(0)
+	expectedLocalEventCount = make(map[string]*int32)
+)
 
-func eventCountRunner(counter *int32) func(signals <-chan os.Signal, ready chan<- struct{}) error {
+func expectEventToHaveCellID(cellID string, event models.Event) {
+	defer GinkgoRecover()
+
+	e, ok := event.(*models.ActualLRPChangedEvent)
+	if !ok || cellID == "" {
+		return
+	}
+
+	lrp, _ := e.Before.Resolve()
+	Expect(lrp.CellId).To(Equal(cellID))
+	lrp, _ = e.After.Resolve()
+	Expect(lrp.CellId).To(Equal(cellID))
+}
+
+func eventCountRunner(cellID string, counter *int32) func(signals <-chan os.Signal, ready chan<- struct{}) error {
 	return func(signals <-chan os.Signal, ready chan<- struct{}) error {
-		eventSource, err := bbsClient.SubscribeToEvents(logger)
+		eventSource, err := bbsClient.SubscribeToEventsByCellID(logger, cellID)
 		Expect(err).NotTo(HaveOccurred())
 		close(ready)
 
@@ -63,7 +80,8 @@ func eventCountRunner(counter *int32) func(signals <-chan os.Signal, ready chan<
 
 		for {
 			select {
-			case <-eventChan:
+			case event := <-eventChan:
+				expectEventToHaveCellID(cellID, event)
 				atomic.AddInt32(counter, 1)
 
 			case <-signals:
@@ -84,7 +102,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 		var process ifrit.Process
 
 		BeforeEach(func() {
-			process = ifrit.Invoke(ifrit.RunFunc(eventCountRunner(&eventCount)))
+			process = ifrit.Invoke(ifrit.RunFunc(eventCountRunner("", &eventCount)))
 		})
 
 		AfterEach(func() {
@@ -141,7 +159,9 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 				cellID := fmt.Sprintf("cell-%d", i)
 				wg.Add(1)
 
-				go repBulker(b, &wg, cellID, numTrials, semaphore, &totalQueued, &totalRan, &expectedEventCount, queue)
+				localEventCount := new(int32)
+				expectedLocalEventCount[cellID] = localEventCount
+				go repBulker(b, &wg, cellID, numTrials, semaphore, &totalQueued, &totalRan, &expectedEventCount, localEventCount, queue)
 			}
 
 			wg.Wait()
@@ -156,15 +176,29 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 				return atomic.LoadInt32(&totalRan)
 			}, 2*time.Minute).Should(Equal(totalQueued), "should have run the same number of queued LRP operations")
 
-			// When you read the following test you might think: "Why are we checking
-			// that each route emitter receives ALL the events? Shouldn't it receive
-			// only the ones for its cell??????"
-			// Well, yes, but they currently receive ALL since we don't have
-			// server-side filtering for the event streams it subscribes to.
-			for _, v := range routeEmitterEventCounts {
+			if localRouteEmitters {
+				for cellID, v := range routeEmitterEventCounts {
+					expectedEventCount := float64(atomic.LoadInt32(expectedLocalEventCount[cellID]))
+					tolerance := expectedEventCount * config.ErrorTolerance
+					logger.Info("checking-local-event-count", lager.Data{
+						"cell-id":   cellID,
+						"expected":  expectedEventCount,
+						"tolerance": tolerance,
+					})
+					Eventually(func() int32 {
+						return atomic.LoadInt32(v)
+					}, 2*time.Minute).Should(BeNumerically("~", expectedEventCount, tolerance), "events received")
+				}
+			} else {
+				logger.Info("checking-global-event-count", lager.Data{
+					"expected":  expectedEventCount,
+					"tolerance": eventTolerance,
+				})
+
+				tolerance := float64(expectedEventCount) * config.ErrorTolerance
 				Eventually(func() int32 {
-					return atomic.LoadInt32(v)
-				}, 2*time.Minute).Should(BeNumerically("~", expectedEventCount, eventTolerance), "events received")
+					return atomic.LoadInt32(routeEmitterEventCounts["global"])
+				}, 2*time.Minute).Should(BeNumerically("~", expectedEventCount, tolerance), "events received")
 			}
 		}, 1)
 	})
@@ -243,7 +277,7 @@ func convergence(b Benchmarker, logger lager.Logger, wg *sync.WaitGroup, numTria
 	}
 }
 
-func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, semaphore chan struct{}, totalQueued, totalRan, expectedEventCount *int32, queue operationq.Queue) {
+func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, semaphore chan struct{}, totalQueued, totalRan, expectedEventCount *int32, expectedLocalEventCount *int32, queue operationq.Queue) {
 	defer GinkgoRecover()
 	defer wg.Done()
 
@@ -277,7 +311,7 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 			for k := 0; k < numActuals; k++ {
 				actualLRP, _ := actuals[k].Resolve()
 				atomic.AddInt32(totalQueued, 1)
-				queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, totalRan, expectedEventCount, semaphore})
+				queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, totalRan, expectedEventCount, expectedLocalEventCount, semaphore})
 			}
 		}, reporter.ReporterInfo{
 			MetricName: RepBulkLoop,
@@ -348,7 +382,7 @@ func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, routeEm
 		wg.Done()
 	}()
 
-	ifrit.Invoke(ifrit.RunFunc(eventCountRunner(routeEmitterEventCount)))
+	ifrit.Invoke(ifrit.RunFunc(eventCountRunner(cellID, routeEmitterEventCount)))
 
 	expectedActualLRPCount, ok := expectedActualLRPCounts[cellID]
 	Expect(ok).To(BeTrue())
@@ -395,7 +429,7 @@ func globalRouteEmitter(b Benchmarker, wg *sync.WaitGroup, routeEmitterEventCoun
 		logger.Info("finish-global-route-emitter-loop")
 	}()
 
-	ifrit.Invoke(ifrit.RunFunc(eventCountRunner(routeEmitterEventCount)))
+	ifrit.Invoke(ifrit.RunFunc(eventCountRunner("", routeEmitterEventCount)))
 
 	for j := 0; j < numTrials; j++ {
 		sleepDuration := getSleepDuration(j, bulkCycle)
@@ -424,6 +458,7 @@ type lrpOperation struct {
 	b                Benchmarker
 	globalCount      *int32
 	globalEventCount *int32
+	localEventCount  *int32
 	semaphore        chan struct{}
 }
 
@@ -451,6 +486,7 @@ func (lo *lrpOperation) Execute() {
 		// if the actual lrp was not already started, an event will be generated
 		if actualLRP.State != models.ActualLRPStateRunning {
 			atomic.AddInt32(lo.globalEventCount, 1)
+			atomic.AddInt32(lo.localEventCount, 1)
 		}
 	}, reporter.ReporterInfo{
 		MetricName: RepStartActualLRP,
@@ -464,6 +500,7 @@ func (lo *lrpOperation) Execute() {
 			<-lo.semaphore
 			Expect(err).NotTo(HaveOccurred())
 			atomic.AddInt32(lo.globalEventCount, 1)
+			atomic.AddInt32(lo.localEventCount, 1)
 		}, reporter.ReporterInfo{
 			MetricName: RepClaimActualLRP,
 		})
