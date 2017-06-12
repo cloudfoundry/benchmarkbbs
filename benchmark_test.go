@@ -51,11 +51,11 @@ func expectEventToHaveCellID(cellID string, event models.Event) {
 	if !ok || cellID == "" {
 		return
 	}
-
-	lrp, _ := e.Before.Resolve()
-	Expect(lrp.CellId).To(Equal(cellID))
-	lrp, _ = e.After.Resolve()
-	Expect(lrp.CellId).To(Equal(cellID))
+	beforeLRP, _ := e.Before.Resolve()
+	Expect(beforeLRP.CellId).To(Equal(cellID))
+	afterLRP, _ := e.After.Resolve()
+	Expect(afterLRP.CellId).To(Equal(cellID))
+	logger.Info("received-event", lager.Data{"cell_id": cellID, "process_guid": beforeLRP.ProcessGuid, "before_state": beforeLRP.State, "after_state": afterLRP.State})
 }
 
 func eventCountRunner(cellID string, counter *int32) func(signals <-chan os.Signal, ready chan<- struct{}) error {
@@ -74,7 +74,9 @@ func eventCountRunner(cellID string, counter *int32) func(signals <-chan os.Sign
 				}
 				if event != nil {
 					eventChan <- event
+					continue
 				}
+				logger.Info("received-nil-event")
 			}
 		}()
 
@@ -485,6 +487,7 @@ func (lo *lrpOperation) Execute() {
 
 		// if the actual lrp was not already started, an event will be generated
 		if actualLRP.State != models.ActualLRPStateRunning {
+			logger.Info("expecting-start-event", lager.Data{"cell_id": actualLRP.CellId, "process_guid": actualLRP.ProcessGuid})
 			atomic.AddInt32(lo.globalEventCount, 1)
 			atomic.AddInt32(lo.localEventCount, 1)
 		}
@@ -499,6 +502,7 @@ func (lo *lrpOperation) Execute() {
 			err = bbsClient.ClaimActualLRP(logger, actualLRP.ActualLRPKey.ProcessGuid, index, &actualLRP.ActualLRPInstanceKey)
 			<-lo.semaphore
 			Expect(err).NotTo(HaveOccurred())
+			logger.Info("expecting-claim-event", lager.Data{"cell_id": actualLRP.CellId, "process_guid": actualLRP.ProcessGuid})
 			atomic.AddInt32(lo.globalEventCount, 1)
 			atomic.AddInt32(lo.localEventCount, 1)
 		}, reporter.ReporterInfo{
