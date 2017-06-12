@@ -105,6 +105,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 
 		BeforeEach(func() {
 			process = ifrit.Invoke(ifrit.RunFunc(eventCountRunner("", &eventCount)))
+			<-process.Ready()
 		})
 
 		AfterEach(func() {
@@ -143,13 +144,17 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 					routeEmitterEventCounts[cellID] = routeEmitterEventCount
 					// start local route-emitter
 					wg.Add(1)
-					go localRouteEmitter(b, &wg, cellID, routeEmitterEventCount, semaphore, numTrials)
+					process := ifrit.Invoke(ifrit.RunFunc(eventCountRunner(cellID, routeEmitterEventCount)))
+					<-process.Ready()
+					go localRouteEmitter(b, &wg, cellID, semaphore, numTrials)
 				}
 			} else {
 				wg.Add(1)
 				routeEmitterEventCount := new(int32)
 				routeEmitterEventCounts["global"] = routeEmitterEventCount
-				go globalRouteEmitter(b, &wg, routeEmitterEventCount, semaphore, numTrials)
+				process := ifrit.Invoke(ifrit.RunFunc(eventCountRunner("", routeEmitterEventCount)))
+				<-process.Ready()
+				go globalRouteEmitter(b, &wg, semaphore, numTrials)
 			}
 
 			queue := operationq.NewSlidingQueue(numTrials)
@@ -370,7 +375,7 @@ func cellRegistrar(b Benchmarker, cellID string) {
 	})
 }
 
-func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, routeEmitterEventCount *int32, semaphore chan struct{}, numTrials int) {
+func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, semaphore chan struct{}, numTrials int) {
 	defer GinkgoRecover()
 
 	logger := logger.WithData(lager.Data{"cell-id": cellID})
@@ -380,8 +385,6 @@ func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, routeEm
 		logger.Info("finish-local-route-emitter-loop")
 		wg.Done()
 	}()
-
-	ifrit.Invoke(ifrit.RunFunc(eventCountRunner(cellID, routeEmitterEventCount)))
 
 	expectedActualLRPCount, ok := expectedActualLRPCounts[cellID]
 	Expect(ok).To(BeTrue())
@@ -416,7 +419,7 @@ func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, routeEm
 	}
 }
 
-func globalRouteEmitter(b Benchmarker, wg *sync.WaitGroup, routeEmitterEventCount *int32, semaphore chan struct{}, numTrials int) {
+func globalRouteEmitter(b Benchmarker, wg *sync.WaitGroup, semaphore chan struct{}, numTrials int) {
 	defer GinkgoRecover()
 
 	logger.Info("start-global-route-emitter-loop")
@@ -425,8 +428,6 @@ func globalRouteEmitter(b Benchmarker, wg *sync.WaitGroup, routeEmitterEventCoun
 		wg.Done()
 		logger.Info("finish-global-route-emitter-loop")
 	}()
-
-	ifrit.Invoke(ifrit.RunFunc(eventCountRunner("", routeEmitterEventCount)))
 
 	for j := 0; j < numTrials; j++ {
 		sleepDuration := getSleepDuration(j, bulkCycle)
