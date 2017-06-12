@@ -80,18 +80,6 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 
 			cellID := fmt.Sprintf("cell-%d", rand.Intn(numReps))
 			actualLRPInstanceKey := &models.ActualLRPInstanceKey{InstanceGuid: desired.ProcessGuid + "-i", CellId: cellID}
-
-			actualErrCh <- newStampedError(
-				g.bbsClient.ClaimActualLRP(
-					logger,
-					desired.ProcessGuid,
-					0,
-					actualLRPInstanceKey,
-				),
-				id,
-				cellID,
-			)
-
 			netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.NewPortMapping(61999, 8080))
 			actualStartErrCh <- newStampedError(
 				g.bbsClient.StartActualLRP(logger, &models.ActualLRPKey{Domain: desired.Domain, ProcessGuid: desired.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo),
@@ -114,59 +102,44 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 		close(actualStartErrCh)
 	}()
 
-	return g.processResults(logger, desiredErrCh, actualErrCh, actualStartErrCh, numReps)
+	return g.processResults(logger, desiredErrCh, actualStartErrCh, numReps)
 }
 
-func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, actualErrCh, actualStartErrCh chan *stampedError, numReps int) (int, map[string]int, error) {
-	var totalResults, totalActualResults, totalStartResults, errorResults, errorActualResults, errorStartResults int
-	actualResults := make(map[string]int)
-	for i := 0; i < numReps; i++ {
-		cellID := fmt.Sprintf("cell-%d", i)
-		actualResults[cellID] = 0
-	}
-
+func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, actualStartErrCh chan *stampedError, numReps int) (int, map[string]int, error) {
+	var totalDesiredResults, totalActualResults, errorDesiredResults, errorActualResults int
+	perCellActualLRPCount := make(map[string]int)
+	perCellActualLRPStartAttempts := make(map[string]int)
 	for err := range desiredErrCh {
 		if err.err != nil {
 			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
 			logger.Error("failed-seeding-desired-lrps", newErr)
-			errorResults++
+			errorDesiredResults++
 		}
-		totalResults++
-	}
-
-	for err := range actualErrCh {
-		if _, ok := actualResults[err.cellId]; !ok {
-			actualResults[err.cellId] = 0
-		}
-
-		if err.err != nil {
-			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
-			logger.Error("failed-claiming-actual-lrps", newErr)
-			errorActualResults++
-		}
-
-		actualResults[err.cellId]++
-		totalActualResults++
+		totalDesiredResults++
 	}
 
 	for err := range actualStartErrCh {
 		if err.err != nil {
 			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
-			logger.Error("failed-starting-actual-lrp", newErr)
-			errorStartResults++
+			logger.Error("failed-starting-actual-lrps", newErr)
+			errorActualResults++
+		} else {
+			// only increment the per cell count on successful requests
+			perCellActualLRPCount[err.cellId]++
 		}
-		totalStartResults++
+		perCellActualLRPStartAttempts[err.cellId]++
+		totalActualResults++
 	}
 
-	errorRate := float64(errorResults) / float64(totalResults)
+	desiredErrorRate := float64(errorDesiredResults) / float64(totalDesiredResults)
 	logger.Info("desireds-complete", lager.Data{
-		"total-results": totalResults,
-		"error-results": errorResults,
-		"error-rate":    fmt.Sprintf("%.2f", errorRate),
+		"total-results": totalDesiredResults,
+		"error-results": errorDesiredResults,
+		"error-rate":    fmt.Sprintf("%.2f", desiredErrorRate),
 	})
 
-	if errorRate > g.errorTolerance {
-		err := fmt.Errorf("Error rate of %.3f for desireds exceeds tolerance of %.3f", errorRate, g.errorTolerance)
+	if desiredErrorRate > g.errorTolerance {
+		err := fmt.Errorf("Error rate of %.3f for desireds exceeds tolerance of %.3f", desiredErrorRate, g.errorTolerance)
 		logger.Error("failed", err)
 		return 0, nil, err
 	}
@@ -184,19 +157,6 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, 
 		return 0, nil, err
 	}
 
-	actualStartErrorRate := float64(errorStartResults) / float64(totalStartResults)
-	logger.Info("starting-actuals-complete", lager.Data{
-		"total-results": totalStartResults,
-		"error-results": errorStartResults,
-		"error-rate":    fmt.Sprintf("%.2f", actualStartErrorRate),
-	})
-
-	if actualStartErrorRate > g.errorTolerance {
-		err := fmt.Errorf("Error rate of %.3f for actuals exceeds tolerance of %.3f", actualStartErrorRate, g.errorTolerance)
-		logger.Error("failed", err)
-		return 0, nil, err
-	}
-
 	if g.datadogClient != nil {
 		logger.Info("posting-datadog-metrics")
 		timestamp := float64(time.Now().Unix())
@@ -204,7 +164,7 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, 
 			{
 				Metric: fmt.Sprintf("%s.failed-desired-requests", g.metricPrefix),
 				Points: []datadog.DataPoint{
-					{timestamp, float64(errorResults)},
+					{timestamp, float64(errorDesiredResults)},
 				},
 			},
 		})
@@ -226,7 +186,18 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, 
 		}
 	}
 
-	return totalResults - errorResults, actualResults, nil
+	for cell, lrpCount := range perCellActualLRPCount {
+		attempts := perCellActualLRPStartAttempts[cell]
+		errorCount := attempts - lrpCount
+		errorRate := float64(errorCount) / float64(attempts)
+		if errorRate > g.errorTolerance {
+			err := fmt.Errorf("Error rate of %.3f for actuals exceeds tolerance of %.3f", errorRate, g.errorTolerance)
+			logger.Error("failed", err)
+			return 0, nil, err
+		}
+	}
+
+	return totalDesiredResults - errorDesiredResults, perCellActualLRPCount, nil
 }
 
 func newDesiredLRP(guid string) (*models.DesiredLRP, error) {

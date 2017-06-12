@@ -40,13 +40,10 @@ import (
 )
 
 var (
-	expectedLRPCount     int
-	expectedLRPVariation float64
+	expectedLRPCount int
 
-	expectedActualLRPCounts     map[string]int
-	expectedActualLRPVariations map[string]float64
-
-	config benchmarkconfig.BenchmarkBBSConfig
+	expectedActualLRPCounts map[string]int
+	config                  benchmarkconfig.BenchmarkBBSConfig
 
 	logger          lager.Logger
 	sqlDB           *sqldb.SQLDB
@@ -137,11 +134,9 @@ func TestBenchmarkBbs(t *testing.T) {
 }
 
 type expectedLRPCounts struct {
-	DesiredLRPCount     int
-	DesiredLRPVariation float64
+	DesiredLRPCount int
 
-	ActualLRPCounts     map[string]int
-	ActualLRPVariations map[string]float64
+	ActualLRPCounts map[string]int
 }
 
 func initializeActiveDB() *sql.DB {
@@ -174,8 +169,6 @@ func initializeActiveDB() *sql.DB {
 
 var _ = BeforeSuite(func() {
 	bbsClient = initializeBBSClient(logger, time.Duration(config.BBSClientHTTPTimeout))
-
-	expectedActualLRPVariations = make(map[string]float64)
 
 	conn := initializeActiveDB()
 
@@ -228,12 +221,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	if float64(expectedLRPCount) < float64(config.DesiredLRPs)*config.ErrorTolerance {
-		Fail(fmt.Sprintf("Error rate of %.3f for actuals exceeds tolerance of %.3f", float64(expectedLRPCount/config.DesiredLRPs), config.ErrorTolerance))
-	}
-
-	expectedLRPVariation = float64(expectedLRPCount) * config.ErrorTolerance
-	for k, v := range expectedActualLRPCounts {
-		expectedActualLRPVariations[k] = float64(v) * config.ErrorTolerance
+		Fail(fmt.Sprintf("Error rate of %.3f for actuals exceeds tolerance of %.3f", float64(expectedLRPCount)/float64(config.DesiredLRPs), config.ErrorTolerance))
 	}
 })
 
