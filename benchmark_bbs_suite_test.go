@@ -25,6 +25,7 @@ import (
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
 	"code.cloudfoundry.org/cfhttp"
 	"code.cloudfoundry.org/clock"
+	fakes "code.cloudfoundry.org/go-loggregator/testhelpers/fakes/v1"
 	"code.cloudfoundry.org/lager"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -245,6 +246,7 @@ func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
 		guidprovider.DefaultGuidProvider,
 		clock.NewClock(),
 		config.DatabaseDriver,
+		&fakes.FakeIngressClient{},
 	)
 }
 
