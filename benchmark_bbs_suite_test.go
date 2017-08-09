@@ -99,10 +99,17 @@ func TestBenchmarkBbs(t *testing.T) {
 	if config.LogFilename == "" {
 		logWriter = GinkgoWriter
 	} else {
-		logFile, err := os.Create(config.LogFilename)
-		if err != nil {
-			panic(fmt.Errorf("Error opening file '%s': %s", config.LogFilename, err.Error()))
+		var logFile *os.File
+		var err error
+		if _, err = os.Stat(config.LogFilename); os.IsNotExist(err) {
+			logFile, err = os.Create(config.LogFilename)
+			if err != nil {
+				panic(fmt.Errorf("Error opening file '%s': %s", config.LogFilename, err.Error()))
+			}
+		} else {
+			logFile, err = os.OpenFile(config.LogFilename, os.O_APPEND, 0600)
 		}
+
 		defer logFile.Close()
 
 		logWriter = logFile
