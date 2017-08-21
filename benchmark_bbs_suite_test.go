@@ -25,7 +25,7 @@ import (
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
 	"code.cloudfoundry.org/cfhttp"
 	"code.cloudfoundry.org/clock"
-	fakes "code.cloudfoundry.org/go-loggregator/testhelpers/fakes/v1"
+	fakes "code.cloudfoundry.org/diego-logging-client/testhelpers"
 	"code.cloudfoundry.org/lager"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
