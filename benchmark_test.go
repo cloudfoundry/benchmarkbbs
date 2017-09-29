@@ -1,7 +1,7 @@
 package benchmarkbbs_test
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -12,13 +12,11 @@ import (
 	"code.cloudfoundry.org/bbs/models"
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
 	"code.cloudfoundry.org/clock"
-	"code.cloudfoundry.org/executor"
 	"code.cloudfoundry.org/lager"
 	"code.cloudfoundry.org/locket"
 	"code.cloudfoundry.org/locket/lock"
 	locketmodels "code.cloudfoundry.org/locket/models"
 	"code.cloudfoundry.org/operationq"
-	uuid "github.com/nu7hatch/gouuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/tedsuo/ifrit"
@@ -28,7 +26,6 @@ import (
 const (
 	CellPresenceFetching              = "CellPresenceFetching"
 	CellPresenceSetting               = "CellPresenceSetting"
-	ConvergenceGathering              = "ConvergenceGathering"
 	FetchActualLRPsAndSchedulingInfos = "FetchActualLRPsAndSchedulingInfos"
 	NsyncBulkerFetching               = "NsyncBulkerFetching"
 	RepBulkFetching                   = "RepBulkFetching"
@@ -37,11 +34,18 @@ const (
 	RepStartActualLRP                 = "RepStartActualLRP"
 )
 
+type lockInfo struct {
+	lockPayload *locketmodels.Resource
+	lockProcess ifrit.Process
+}
+
 var (
 	bulkCycle               = 30 * time.Second
 	eventCount              = int32(0)
 	expectedEventCount      = int32(0)
 	expectedLocalEventCount = make(map[string]*int32)
+	lockInfos               = []lockInfo{}
+	longTermTtl             = int64(864000) // 10 days
 )
 
 func expectEventToHaveCellID(cellID string, event models.Event) {
@@ -101,7 +105,11 @@ func eventCountRunner(cellID string, counter *int32) func(signals <-chan os.Sign
 
 var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 	Describe("main benchmark test", func() {
-		var process ifrit.Process
+		var (
+			routeEmitterProcesses []ifrit.Process
+			process               ifrit.Process
+			err                   error
+		)
 
 		BeforeEach(func() {
 			process = ifrit.Invoke(ifrit.RunFunc(eventCountRunner("", &eventCount)))
@@ -110,12 +118,29 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 
 		AfterEach(func() {
 			ginkgomon.Kill(process)
+			for _, emitterProcess := range routeEmitterProcesses {
+				ginkgomon.Kill(emitterProcess)
+			}
+
+			for _, lock := range lockInfos {
+				logger.Info("killing-lock", lager.Data{"owner": lock.lockPayload.Owner})
+				ginkgomon.Kill(lock.lockProcess)
+
+				Eventually(
+					lock.lockProcess.Wait(),
+					5*time.Second,
+				).Should(Receive(), "timed out trying to kill lock "+lock.lockPayload.Owner)
+
+				logger.Info("lock-killed", lager.Data{"owner": lock.lockPayload.Owner})
+				_, err = locketClient.Lock(context.Background(), &locketmodels.LockRequest{Resource: lock.lockPayload, TtlInSeconds: longTermTtl})
+				Expect(err).NotTo(HaveOccurred())
+			}
 		})
 
 		Measure("data for benchmarks", func(b Benchmarker) {
 			for i := 0; i < numReps; i++ {
 				cellID := fmt.Sprintf("cell-%d", i)
-				cellRegistrar(b, cellID)
+				lockInfos = append(lockInfos, cellRegistrar(b, cellID, locketClient))
 			}
 
 			wg := sync.WaitGroup{}
@@ -127,10 +152,6 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 			// start nsync
 			wg.Add(1)
 			go nsyncBulkerLoop(b, &wg, numTrials)
-
-			// start convergence
-			wg.Add(1)
-			go convergence(b, logger, &wg, numTrials, numReps)
 
 			// we need to make sure we don't run out of ports so limit amount of
 			// active http requests to 25000
@@ -147,6 +168,8 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 					process := ifrit.Invoke(ifrit.RunFunc(eventCountRunner(cellID, routeEmitterEventCount)))
 					<-process.Ready()
 					go localRouteEmitter(b, &wg, cellID, semaphore, numTrials)
+
+					routeEmitterProcesses = append(routeEmitterProcesses, process)
 				}
 			} else {
 				wg.Add(1)
@@ -155,6 +178,8 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 				process := ifrit.Invoke(ifrit.RunFunc(eventCountRunner("", routeEmitterEventCount)))
 				<-process.Ready()
 				go globalRouteEmitter(b, &wg, semaphore, numTrials)
+
+				routeEmitterProcesses = append(routeEmitterProcesses, process)
 			}
 
 			queue := operationq.NewSlidingQueue(numTrials)
@@ -259,31 +284,6 @@ func nsyncBulkerLoop(b Benchmarker, wg *sync.WaitGroup, numTrials int) {
 	}
 }
 
-func convergence(b Benchmarker, logger lager.Logger, wg *sync.WaitGroup, numTrials, numReps int) {
-	defer GinkgoRecover()
-	logger = logger.Session("lrp-convergence-loop")
-	logger.Info("starting")
-	defer logger.Info("completed")
-	defer wg.Done()
-
-	for i := 0; i < numTrials; i++ {
-		sleepDuration := getSleepDuration(i, bulkCycle)
-		time.Sleep(sleepDuration)
-		cellSet := models.NewCellSet()
-		for i := 0; i < numReps; i++ {
-			cellID := fmt.Sprintf("cell-%d", i)
-			presence := models.NewCellPresence(cellID, "earth", "http://planet-earth", "north", models.CellCapacity{}, nil, nil, nil, nil)
-			cellSet.Add(&presence)
-		}
-
-		b.Time("BBS' internal gathering of LRPs", func() {
-			activeDB.ConvergeLRPs(logger, cellSet)
-		}, reporter.ReporterInfo{
-			MetricName: ConvergenceGathering,
-		})
-	}
-}
-
 func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, semaphore chan struct{}, totalQueued, totalRan, expectedEventCount *int32, expectedLocalEventCount *int32, queue operationq.Queue) {
 	defer GinkgoRecover()
 	defer wg.Done()
@@ -323,39 +323,11 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 	}
 }
 
-func cellRegistrar(b Benchmarker, cellID string) {
+func cellRegistrar(b Benchmarker, cellID string, locketClient locketmodels.LocketClient) lockInfo {
+	logger.Info("registering-cell", lager.Data{"cell-id": cellID})
 	defer GinkgoRecover()
 
-	guid, err := uuid.NewV4()
-	Expect(err).NotTo(HaveOccurred())
-
-	resources := executor.ExecutorResources{
-		MemoryMB:   1000,
-		DiskMB:     2000,
-		Containers: 300,
-	}
-	cellCapacity := models.NewCellCapacity(int32(resources.MemoryMB), int32(resources.DiskMB), int32(resources.Containers))
-	cellPresence := models.NewCellPresence(cellID, cellID+".address", cellID+".url",
-		"z1", cellCapacity, []string{"providers"},
-		[]string{"cflinuxfs9"}, []string{}, []string{})
-
-	payload, err := json.Marshal(cellPresence)
-	Expect(err).NotTo(HaveOccurred())
-
-	lockPayload := &locketmodels.Resource{
-		Key:   cellID,
-		Owner: guid.String(),
-		Value: string(payload),
-		Type:  locketmodels.PresenceType,
-	}
-
-	var locketClient locketmodels.LocketClient
-	if config.SkipCertVerify {
-		locketClient, err = locket.NewClientSkipCertVerify(logger, config.ClientLocketConfig)
-	} else {
-		locketClient, err = locket.NewClient(logger, config.ClientLocketConfig)
-	}
-	Expect(err).NotTo(HaveOccurred())
+	lockPayload := lockResource(cellID)
 
 	lockRunner := lock.NewPresenceRunner(
 		logger,
@@ -366,13 +338,19 @@ func cellRegistrar(b Benchmarker, cellID string) {
 		locket.RetryInterval,
 	)
 
+	var lockProcess ifrit.Process
 	b.Time("acquiring lock", func() {
 		defer GinkgoRecover()
-		lockProcess := ifrit.Background(lockRunner)
+		lockProcess = ifrit.Background(lockRunner)
 		Eventually(lockProcess.Ready()).Should(BeClosed(), "cell "+cellID+" failed to acquire lock")
 	}, reporter.ReporterInfo{
 		MetricName: CellPresenceSetting,
 	})
+
+	return lockInfo{
+		lockPayload: lockPayload,
+		lockProcess: lockProcess,
+	}
 }
 
 func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, semaphore chan struct{}, numTrials int) {

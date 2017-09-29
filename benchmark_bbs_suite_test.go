@@ -1,8 +1,10 @@
 package benchmarkbbs_test
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,13 +22,17 @@ import (
 	"code.cloudfoundry.org/bbs/encryption"
 	"code.cloudfoundry.org/bbs/format"
 	"code.cloudfoundry.org/bbs/guidprovider"
+	"code.cloudfoundry.org/bbs/models"
 	benchmarkconfig "code.cloudfoundry.org/benchmarkbbs/config"
 	"code.cloudfoundry.org/benchmarkbbs/generator"
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
 	"code.cloudfoundry.org/cfhttp"
 	"code.cloudfoundry.org/clock"
 	fakes "code.cloudfoundry.org/diego-logging-client/testhelpers"
+	"code.cloudfoundry.org/executor"
 	"code.cloudfoundry.org/lager"
+	"code.cloudfoundry.org/locket"
+	locketmodels "code.cloudfoundry.org/locket/models"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -47,6 +53,7 @@ var (
 	config                  benchmarkconfig.BenchmarkBBSConfig
 
 	logger          lager.Logger
+	locketClient    locketmodels.LocketClient
 	sqlDB           *sqldb.SQLDB
 	activeDB        db.DB
 	bbsClient       bbs.InternalClient
@@ -172,11 +179,21 @@ var _ = BeforeSuite(func() {
 	bbsClient = initializeBBSClient(logger, time.Duration(config.BBSClientHTTPTimeout))
 
 	conn := initializeActiveDB()
+	initializeLocketClient()
 
-	if config.ReseedDatabase {
+	resp, err := locketClient.FetchAll(context.Background(), &locketmodels.FetchAllRequest{TypeCode: locketmodels.PRESENCE})
+	Expect(err).NotTo(HaveOccurred())
+
+	cells := make(map[string]struct{})
+	for i := 0; i < config.NumReps; i++ {
+		cells[fmt.Sprintf("cell-%d", i)] = struct{}{}
+	}
+
+	if config.ReseedDatabase || config.NumReps != len(resp.Resources) {
 		var err error
 
 		cleanupSQLDB(conn)
+		resetLocketDB(locketClient, cells, resp)
 
 		if config.DesiredLRPs > 0 {
 			desiredLRPGenerator := generator.NewDesiredLRPGenerator(
@@ -191,7 +208,8 @@ var _ = BeforeSuite(func() {
 			Expect(err).NotTo(HaveOccurred())
 		}
 	} else {
-		expectedActualLRPCounts = make(map[string]int)
+		resetUnclaimedActualLRPs(conn, cells)
+
 		query := `
 			SELECT
 				COUNT(*)
@@ -201,6 +219,7 @@ var _ = BeforeSuite(func() {
 		err := res.Scan(&expectedLRPCount)
 		Expect(err).NotTo(HaveOccurred())
 
+		expectedActualLRPCounts = make(map[string]int)
 		query = `
 			SELECT
 				cell_id, COUNT(*)
@@ -250,6 +269,16 @@ func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
 	)
 }
 
+func initializeLocketClient() {
+	var err error
+	if config.SkipCertVerify {
+		locketClient, err = locket.NewClientSkipCertVerify(logger, config.ClientLocketConfig)
+	} else {
+		locketClient, err = locket.NewClient(logger, config.ClientLocketConfig)
+	}
+	Expect(err).NotTo(HaveOccurred())
+}
+
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.InternalClient {
 	bbsURL, err := url.Parse(config.BBSAddress)
 	if err != nil {
@@ -291,4 +320,106 @@ func cleanupSQLDB(conn *sql.DB) {
 	Expect(err).NotTo(HaveOccurred())
 	_, err = conn.Exec("TRUNCATE desired_lrps")
 	Expect(err).NotTo(HaveOccurred())
+}
+
+func resetLocketDB(locketClient locketmodels.LocketClient, cells map[string]struct{}, resp *locketmodels.FetchAllResponse) {
+	for _, resource := range resp.Resources {
+		if _, ok := cells[resource.Owner]; !ok {
+			_, err := locketClient.Release(context.Background(), &locketmodels.ReleaseRequest{Resource: resource})
+			Expect(err).NotTo(HaveOccurred())
+		}
+	}
+
+	for cellId, _ := range cells {
+		_, err := locketClient.Lock(context.Background(), &locketmodels.LockRequest{Resource: lockResource(cellId), TtlInSeconds: longTermTtl})
+		Expect(err).NotTo(HaveOccurred())
+	}
+}
+
+func lockResource(cellID string) *locketmodels.Resource {
+	resources := executor.ExecutorResources{
+		MemoryMB:   1000,
+		DiskMB:     2000,
+		Containers: 300,
+	}
+	cellCapacity := models.NewCellCapacity(int32(resources.MemoryMB), int32(resources.DiskMB), int32(resources.Containers))
+	cellPresence := models.NewCellPresence(cellID, cellID+".address", cellID+".url",
+		"z1", cellCapacity, []string{"providers"},
+		[]string{"cflinuxfs9"}, []string{}, []string{})
+
+	payload, err := json.Marshal(cellPresence)
+	Expect(err).NotTo(HaveOccurred())
+
+	return &locketmodels.Resource{
+		Key:   cellID,
+		Owner: cellID,
+		Value: string(payload),
+		Type:  locketmodels.PresenceType,
+	}
+}
+
+func resetUnclaimedActualLRPs(conn *sql.DB, cells map[string]struct{}) {
+	existingCellIds := make(map[string]struct{})
+
+	query := `
+			SELECT
+				cell_id
+			FROM actual_lrps
+			GROUP BY cell_id
+		`
+	rows, err := conn.Query(query)
+	Expect(err).NotTo(HaveOccurred())
+
+	defer rows.Close()
+	for rows.Next() {
+		var cellId string
+		err = rows.Scan(&cellId)
+		Expect(err).NotTo(HaveOccurred())
+
+		existingCellIds[cellId] = struct{}{}
+	}
+
+	missingCells := findMissingCells(existingCellIds, cells)
+
+	query = `
+				SELECT
+					process_guid, domain
+				FROM actual_lrps WHERE cell_id = ''
+			`
+
+	type guidAndDomain struct {
+		ProcessGuid string
+		Domain      string
+	}
+	var lrps []guidAndDomain
+
+	rows, err = conn.Query(query)
+	Expect(err).NotTo(HaveOccurred())
+
+	defer rows.Close()
+	for rows.Next() {
+		var guid, domain string
+		err = rows.Scan(&guid, &domain)
+		Expect(err).NotTo(HaveOccurred())
+		lrps = append(lrps, guidAndDomain{ProcessGuid: guid, Domain: domain})
+	}
+
+	for i, lrp := range lrps {
+		cellID := missingCells[i%len(missingCells)]
+		actualLRPInstanceKey := &models.ActualLRPInstanceKey{InstanceGuid: lrp.ProcessGuid + "-i", CellId: cellID}
+		netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.NewPortMapping(61999, 8080))
+		err := bbsClient.StartActualLRP(logger, &models.ActualLRPKey{Domain: lrp.Domain, ProcessGuid: lrp.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo)
+		Expect(err).NotTo(HaveOccurred())
+	}
+}
+
+func findMissingCells(existing map[string]struct{}, expected map[string]struct{}) []string {
+	var missing []string
+	for cell, _ := range expected {
+		if _, ok := existing[cell]; !ok {
+			missing = append(missing, cell)
+		}
+	}
+
+	return missing
 }

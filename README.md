@@ -15,15 +15,9 @@ This test suite simulates the load of a CF + Diego deployment against a Diego BB
 The following instructions demonstrate how to run the BBS benchmarks against
 a CF + Diego deployment on [BOSH-Lite](https://github.com/cloudfoundry/bosh-lite).
 
-#### Disable Convergence and Enable Locket
+#### Enable Locket
 
-To prevent it from interfering with the test data, the BBS should run with
-convergence disabled. This can be done by setting the
-`properties.diego.bbs.convergence.repeat_interval_in_seconds` property in the
-Diego deployment manifest to a sufficiently large value (for example, `1000000`)
-so that convergence will not execute during the test run.
-
-The BBS Benchmark test suite now also maintains cell registrations with the Locket
+The BBS Benchmark test suite maintains cell registrations with the Locket
 service, so Locket must be deployed before running it. This can be done via the
 `-Q` option on the Diego manifest-generation script.
 
@@ -160,7 +154,6 @@ To save the benchmark metrics to an S3 bucket, add the following properties:
 
 #### Collected metrics
 
-* **ConvergenceGathering**: The time to complete a convergence loop.
 * **FetchActualLRPsAndSchedulingInfos**: The time to fetch information about
 all `ActualLRPs` and `DesiredLRPs` known to the BBS.
 * **NsyncBulkerFetching**: The time to fetch information about new
@@ -177,9 +170,9 @@ Example:
 {
   "Timestamp" : 1466806960,
   "Measurement" : {
-    "Name" : "BBS' internal gathering of LRPs",
+    "Name" : "Rep's internal gathering of Actual LRPs",
     "Info" : {
-      "MetricName" : "ConvergenceGathering"
+      "MetricName" : "RepBulkLoop"
     },
     "Results" : [
       0.048770786
