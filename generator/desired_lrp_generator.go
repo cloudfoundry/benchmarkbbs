@@ -60,9 +60,9 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 
 	var wg sync.WaitGroup
 
-	desiredErrCh := make(chan *stampedError, count)
+	desiredResultCh := make(chan *stampedError, count)
 	actualErrCh := make(chan *stampedError, count)
-	actualStartErrCh := make(chan *stampedError, count)
+	actualStartResultCh := make(chan *stampedError, count)
 
 	logger.Info("queing-started")
 	for i := 0; i < count; i++ {
@@ -73,15 +73,15 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 
 			desired, err := newDesiredLRP(id)
 			if err != nil {
-				desiredErrCh <- newStampedError(err, id, "")
+				desiredResultCh <- newStampedError(err, id, "")
 				return
 			}
-			desiredErrCh <- newStampedError(g.bbsClient.DesireLRP(logger, desired), id, "")
+			desiredResultCh <- newStampedError(g.bbsClient.DesireLRP(logger, desired), id, "")
 
 			cellID := fmt.Sprintf("cell-%d", rand.Intn(numReps))
 			actualLRPInstanceKey := &models.ActualLRPInstanceKey{InstanceGuid: desired.ProcessGuid + "-i", CellId: cellID}
 			netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.NewPortMapping(61999, 8080))
-			actualStartErrCh <- newStampedError(
+			actualStartResultCh <- newStampedError(
 				g.bbsClient.StartActualLRP(logger, &models.ActualLRPKey{Domain: desired.Domain, ProcessGuid: desired.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo),
 				id,
 				cellID,
@@ -97,30 +97,30 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 
 	go func() {
 		wg.Wait()
-		close(desiredErrCh)
+		close(desiredResultCh)
 		close(actualErrCh)
-		close(actualStartErrCh)
+		close(actualStartResultCh)
 	}()
 
-	return g.processResults(logger, desiredErrCh, actualStartErrCh, numReps)
+	return g.processResults(logger, desiredResultCh, actualStartResultCh, numReps)
 }
 
-func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredErrCh, actualStartErrCh chan *stampedError, numReps int) (int, map[string]int, error) {
+func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredResultCh, actualStartResultCh chan *stampedError, numReps int) (int, map[string]int, error) {
 	var totalDesiredResults, totalActualResults, errorDesiredResults, errorActualResults int
 	perCellActualLRPCount := make(map[string]int)
 	perCellActualLRPStartAttempts := make(map[string]int)
-	for err := range desiredErrCh {
+	for err := range desiredResultCh {
 		if err.err != nil {
-			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
+			newErr := fmt.Errorf("Error %v GUID %s", err.err, err.guid)
 			logger.Error("failed-seeding-desired-lrps", newErr)
 			errorDesiredResults++
 		}
 		totalDesiredResults++
 	}
 
-	for err := range actualStartErrCh {
+	for err := range actualStartResultCh {
 		if err.err != nil {
-			newErr := fmt.Errorf("Error %v GUID %s", err, err.guid)
+			newErr := fmt.Errorf("Error %v GUID %s", err.err, err.guid)
 			logger.Error("failed-starting-actual-lrps", newErr)
 			errorActualResults++
 		} else {
