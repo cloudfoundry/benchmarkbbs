@@ -19,6 +19,7 @@ import (
 	"code.cloudfoundry.org/bbs"
 	"code.cloudfoundry.org/bbs/db"
 	"code.cloudfoundry.org/bbs/db/sqldb"
+	"code.cloudfoundry.org/bbs/db/sqldb/helpers"
 	"code.cloudfoundry.org/bbs/encryption"
 	"code.cloudfoundry.org/bbs/format"
 	"code.cloudfoundry.org/bbs/guidprovider"
@@ -170,7 +171,8 @@ func initializeActiveDB() *sql.DB {
 	err = sqlConn.Ping()
 	Expect(err).NotTo(HaveOccurred())
 
-	sqlDB = initializeSQLDB(logger, sqlConn)
+	wrappedDB := helpers.NewMonitoredDB(sqlConn, helpers.NewQueryMonitor())
+	sqlDB = initializeSQLDB(logger, wrappedDB)
 	activeDB = sqlDB
 	return sqlConn
 }
@@ -245,7 +247,7 @@ var _ = BeforeSuite(func() {
 	}
 })
 
-func initializeSQLDB(logger lager.Logger, sqlConn *sql.DB) *sqldb.SQLDB {
+func initializeSQLDB(logger lager.Logger, sqlConn helpers.DB) *sqldb.SQLDB {
 	key, keys, err := config.EncryptionConfig.Parse()
 	if err != nil {
 		logger.Fatal("cannot-setup-encryption", err)
