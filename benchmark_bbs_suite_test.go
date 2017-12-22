@@ -247,7 +247,7 @@ var _ = BeforeSuite(func() {
 	}
 })
 
-func initializeSQLDB(logger lager.Logger, sqlConn helpers.DB) *sqldb.SQLDB {
+func initializeSQLDB(logger lager.Logger, sqlConn helpers.QueryableDB) *sqldb.SQLDB {
 	key, keys, err := config.EncryptionConfig.Parse()
 	if err != nil {
 		logger.Fatal("cannot-setup-encryption", err)
