@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -282,14 +281,7 @@ func initializeLocketClient() {
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.InternalClient {
-	bbsURL, err := url.Parse(config.BBSAddress)
-	if err != nil {
-		logger.Fatal("Invalid BBS URL", err)
-	}
-
-	if bbsURL.Scheme != "https" {
-		return bbs.NewClient(config.BBSAddress)
-	}
+	var err error
 
 	cfhttp.Initialize(bbsClientHTTPTimeout)
 	var bbsClient bbs.InternalClient
@@ -302,7 +294,7 @@ func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration
 			25000,
 		)
 	} else {
-		bbsClient, err = bbs.NewSecureClient(
+		bbsClient, err = bbs.NewClient(
 			config.BBSAddress,
 			config.BBSCACert,
 			config.BBSClientCert,
