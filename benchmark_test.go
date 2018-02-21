@@ -471,9 +471,8 @@ func (lo *lrpOperation) Execute() {
 
 	if isClaiming {
 		lo.b.Time("claim actual LRP", func() {
-			index := int(actualLRP.ActualLRPKey.Index)
 			lo.semaphore <- struct{}{}
-			err = bbsClient.ClaimActualLRP(logger, actualLRP.ActualLRPKey.ProcessGuid, index, &actualLRP.ActualLRPInstanceKey)
+			err = bbsClient.ClaimActualLRP(logger, &actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey)
 			<-lo.semaphore
 			Expect(err).NotTo(HaveOccurred())
 			logger.Info("expecting-claim-event", lager.Data{"cell_id": actualLRP.CellId, "process_guid": actualLRP.ProcessGuid})
