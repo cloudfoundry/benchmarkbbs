@@ -20,7 +20,6 @@ import (
 	"code.cloudfoundry.org/bbs/db/sqldb"
 	"code.cloudfoundry.org/bbs/db/sqldb/helpers"
 	"code.cloudfoundry.org/bbs/encryption"
-	"code.cloudfoundry.org/bbs/format"
 	"code.cloudfoundry.org/bbs/guidprovider"
 	"code.cloudfoundry.org/bbs/models"
 	benchmarkconfig "code.cloudfoundry.org/benchmarkbbs/config"
@@ -261,7 +260,6 @@ func initializeSQLDB(logger lager.Logger, sqlConn helpers.QueryableDB) *sqldb.SQ
 		sqlConn,
 		1000,
 		1000,
-		format.ENCODED_PROTO,
 		cryptor,
 		guidprovider.DefaultGuidProvider,
 		clock.NewClock(),
