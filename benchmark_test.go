@@ -55,9 +55,11 @@ func expectEventToHaveCellID(cellID string, event models.Event) {
 	if !ok || cellID == "" {
 		return
 	}
-	beforeLRP, _ := e.Before.Resolve()
+	beforeLRP, _, err := e.Before.Resolve()
+	Expect(err).NotTo(HaveOccurred())
 	Expect(beforeLRP.CellId).To(Equal(cellID))
-	afterLRP, _ := e.After.Resolve()
+	afterLRP, _, err := e.After.Resolve()
+	Expect(err).NotTo(HaveOccurred())
 	Expect(afterLRP.CellId).To(Equal(cellID))
 	logger.Info("received-event", lager.Data{"cell_id": cellID, "process_guid": beforeLRP.ProcessGuid, "before_state": beforeLRP.State, "after_state": afterLRP.State})
 }
@@ -313,7 +315,8 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 
 			numActuals := len(actuals)
 			for k := 0; k < numActuals; k++ {
-				actualLRP, _ := actuals[k].Resolve()
+				actualLRP, _, err := actuals[k].Resolve()
+				Expect(err).NotTo(HaveOccurred())
 				atomic.AddInt32(totalQueued, 1)
 				queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, totalRan, expectedEventCount, expectedLocalEventCount, semaphore})
 			}
@@ -379,7 +382,8 @@ func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, semapho
 
 			guids := []string{}
 			for _, actual := range actuals {
-				lrp, _ := actual.Resolve()
+				lrp, _, err := actual.Resolve()
+				Expect(err).NotTo(HaveOccurred())
 				guids = append(guids, lrp.ProcessGuid)
 			}
 
