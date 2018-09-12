@@ -270,37 +270,21 @@ func initializeSQLDB(logger lager.Logger, sqlConn helpers.QueryableDB) *sqldb.SQ
 
 func initializeLocketClient() {
 	var err error
-	if config.SkipCertVerify {
-		locketClient, err = locket.NewClientSkipCertVerify(logger, config.ClientLocketConfig)
-	} else {
-		locketClient, err = locket.NewClient(logger, config.ClientLocketConfig)
-	}
+	locketClient, err = locket.NewClient(logger, config.ClientLocketConfig)
 	Expect(err).NotTo(HaveOccurred())
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.InternalClient {
-	var err error
 
 	cfhttp.Initialize(bbsClientHTTPTimeout)
-	var bbsClient bbs.InternalClient
-	if config.SkipCertVerify {
-		bbsClient, err = bbs.NewSecureSkipVerifyClient(
-			config.BBSAddress,
-			config.BBSClientCert,
-			config.BBSClientKey,
-			1,
-			25000,
-		)
-	} else {
-		bbsClient, err = bbs.NewClient(
-			config.BBSAddress,
-			config.BBSCACert,
-			config.BBSClientCert,
-			config.BBSClientKey,
-			1,
-			25000,
-		)
-	}
+	bbsClient, err := bbs.NewClient(
+		config.BBSAddress,
+		config.BBSCACert,
+		config.BBSClientCert,
+		config.BBSClientKey,
+		1,
+		25000,
+	)
 	if err != nil {
 		logger.Fatal("Failed to configure secure BBS client", err)
 	}
