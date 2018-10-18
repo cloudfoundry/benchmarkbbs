@@ -19,6 +19,7 @@ import (
 	"code.cloudfoundry.org/bbs/db"
 	"code.cloudfoundry.org/bbs/db/sqldb"
 	"code.cloudfoundry.org/bbs/db/sqldb/helpers"
+	"code.cloudfoundry.org/bbs/db/sqldb/helpers/monitor"
 	"code.cloudfoundry.org/bbs/encryption"
 	"code.cloudfoundry.org/bbs/guidprovider"
 	"code.cloudfoundry.org/bbs/models"
@@ -169,7 +170,7 @@ func initializeActiveDB() *sql.DB {
 	err = sqlConn.Ping()
 	Expect(err).NotTo(HaveOccurred())
 
-	wrappedDB := helpers.NewMonitoredDB(sqlConn, helpers.NewQueryMonitor())
+	wrappedDB := helpers.NewMonitoredDB(sqlConn, monitor.New())
 	sqlDB = initializeSQLDB(logger, wrappedDB)
 	activeDB = sqlDB
 	return sqlConn
