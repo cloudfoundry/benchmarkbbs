@@ -13,6 +13,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"testing"
 	"time"
 
 	"code.cloudfoundry.org/bbs"
@@ -37,13 +38,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/zorkian/go-datadog-api"
-
 	_ "github.com/go-sql-driver/mysql"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
-	"testing"
+	"github.com/zorkian/go-datadog-api"
 )
 
 var (
@@ -139,12 +137,6 @@ func TestBenchmarkBbs(t *testing.T) {
 
 	RegisterFailHandler(Fail)
 	RunSpecsWithDefaultAndCustomReporters(t, "Benchmark BBS Suite", reporters)
-}
-
-type expectedLRPCounts struct {
-	DesiredLRPCount int
-
-	ActualLRPCounts map[string]int
 }
 
 func initializeActiveDB() *sql.DB {
