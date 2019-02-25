@@ -27,7 +27,6 @@ import (
 	benchmarkconfig "code.cloudfoundry.org/benchmarkbbs/config"
 	"code.cloudfoundry.org/benchmarkbbs/generator"
 	"code.cloudfoundry.org/benchmarkbbs/reporter"
-	"code.cloudfoundry.org/cfhttp"
 	"code.cloudfoundry.org/clock"
 	fakes "code.cloudfoundry.org/diego-logging-client/testhelpers"
 	"code.cloudfoundry.org/executor"
@@ -268,16 +267,16 @@ func initializeLocketClient() {
 }
 
 func initializeBBSClient(logger lager.Logger, bbsClientHTTPTimeout time.Duration) bbs.InternalClient {
-
-	cfhttp.Initialize(bbsClientHTTPTimeout)
-	bbsClient, err := bbs.NewClient(
-		config.BBSAddress,
-		config.BBSCACert,
-		config.BBSClientCert,
-		config.BBSClientKey,
-		1,
-		25000,
-	)
+	bbsClient, err := bbs.NewClientWithConfig(bbs.ClientConfig{
+		URL:                    config.BBSAddress,
+		IsTLS:                  true,
+		CAFile:                 config.BBSCACert,
+		CertFile:               config.BBSClientCert,
+		KeyFile:                config.BBSClientKey,
+		ClientSessionCacheSize: 1,
+		MaxIdleConnsPerHost:    25000,
+		RequestTimeout:         bbsClientHTTPTimeout,
+	})
 	if err != nil {
 		logger.Fatal("Failed to configure secure BBS client", err)
 	}
