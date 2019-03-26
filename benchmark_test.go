@@ -461,7 +461,7 @@ func (lo *lrpOperation) Execute() {
 		lo.semaphore <- struct{}{}
 		err = bbsClient.StartActualLRP(logger, &actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
 		<-lo.semaphore
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to start LRP for process %s, err: %s", actualLRP.ProcessGuid, err.Error()))
 
 		// if the actual lrp was not already started, an event will be generated
 		if actualLRP.State != models.ActualLRPStateRunning {
