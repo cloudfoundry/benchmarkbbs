@@ -378,7 +378,7 @@ func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, semapho
 			actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{CellID: cellID})
 			<-semaphore
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(actuals)).To(Equal(expectedActualLRPCount), "Number of ActualLRPs retrieved in router-emitter")
+			Expect(len(actuals)).To(Equal(expectedActualLRPCount), "Number of ActualLRPs retrieved in router-emitter on a cell %s", cellID)
 
 			guids := []string{}
 			for _, actual := range actuals {
