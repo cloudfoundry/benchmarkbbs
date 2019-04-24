@@ -111,7 +111,7 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredResultC
 	perCellActualLRPStartAttempts := make(map[string]int)
 	for err := range desiredResultCh {
 		if err.err != nil {
-			newErr := fmt.Errorf("Error %v GUID %s", err.err, err.guid)
+			newErr := fmt.Errorf("Error %v GUID %s, cell id %s", err.err, err.guid, err.cellId)
 			logger.Error("failed-seeding-desired-lrps", newErr)
 			errorDesiredResults++
 		}
