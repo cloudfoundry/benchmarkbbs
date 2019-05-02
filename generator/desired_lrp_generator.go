@@ -112,8 +112,12 @@ func (g *DesiredLRPGenerator) processResults(logger lager.Logger, desiredResultC
 	for err := range desiredResultCh {
 		if err.err != nil {
 			newErr := fmt.Errorf("Error %v GUID %s, cell id %s", err.err, err.guid, err.cellId)
-			logger.Error("failed-seeding-desired-lrps", newErr)
-			errorDesiredResults++
+			if modelErr, ok := err.err.(*models.Error); ok && modelErr.Type == models.Error_ResourceExists {
+				logger.Info("lrp-already-created", lager.Data{"nonfatal-error": newErr})
+			} else {
+				logger.Error("failed-seeding-desired-lrps", newErr)
+				errorDesiredResults++
+			}
 		}
 		totalDesiredResults++
 	}
