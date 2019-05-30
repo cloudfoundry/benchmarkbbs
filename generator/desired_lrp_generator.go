@@ -80,7 +80,7 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 
 			cellID := fmt.Sprintf("cell-%d", rand.Intn(numReps))
 			actualLRPInstanceKey := &models.ActualLRPInstanceKey{InstanceGuid: desired.ProcessGuid + "-i", CellId: cellID}
-			netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.NewPortMapping(61999, 8080))
+			netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", false, models.NewPortMapping(61999, 8080))
 			actualStartResultCh <- newStampedError(
 				g.bbsClient.StartActualLRP(logger, &models.ActualLRPKey{Domain: desired.Domain, ProcessGuid: desired.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo),
 				id,

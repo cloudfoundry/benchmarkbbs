@@ -375,7 +375,7 @@ func resetUnclaimedActualLRPs(conn *sql.DB, cells map[string]struct{}) {
 	for i, lrp := range lrps {
 		cellID := missingCells[i%len(missingCells)]
 		actualLRPInstanceKey := &models.ActualLRPInstanceKey{InstanceGuid: lrp.ProcessGuid + "-i", CellId: cellID}
-		netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.NewPortMapping(61999, 8080))
+		netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", false, models.NewPortMapping(61999, 8080))
 		err := bbsClient.StartActualLRP(logger, &models.ActualLRPKey{Domain: lrp.Domain, ProcessGuid: lrp.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo)
 		Expect(err).NotTo(HaveOccurred())
 	}
