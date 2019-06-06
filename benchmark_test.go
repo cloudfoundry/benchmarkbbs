@@ -457,7 +457,7 @@ func (lo *lrpOperation) Execute() {
 	actualLRP := lo.actualLRP
 
 	lo.b.Time("start actual LRP", func() {
-		netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", false, models.NewPortMapping(61999, 8080))
+		netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.ActualLRPNetInfo_PreferredAddressHost, models.NewPortMapping(61999, 8080))
 		lo.semaphore <- struct{}{}
 		err = bbsClient.StartActualLRP(logger, &actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
 		<-lo.semaphore
