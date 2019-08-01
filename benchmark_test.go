@@ -298,10 +298,10 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 
 		b.Time("rep bulk loop", func() {
 			defer GinkgoRecover()
-			var actuals []*models.ActualLRPGroup
+			var actuals []*models.ActualLRP
 			b.Time("rep bulk fetch", func() {
 				semaphore <- struct{}{}
-				actuals, err = bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{CellID: cellID})
+				actuals, err = bbsClient.ActualLRPs(logger, models.ActualLRPFilter{CellID: cellID})
 				<-semaphore
 				Expect(err).NotTo(HaveOccurred())
 			}, reporter.ReporterInfo{
@@ -313,10 +313,7 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 
 			Expect(len(actuals)).To(Equal(expectedActualLRPCount), "Number of ActualLRPs retrieved by cell %s in rep bulk loop", cellID)
 
-			numActuals := len(actuals)
-			for k := 0; k < numActuals; k++ {
-				actualLRP, _, err := actuals[k].Resolve()
-				Expect(err).NotTo(HaveOccurred())
+			for _, actualLRP := range actuals {
 				atomic.AddInt32(totalQueued, 1)
 				queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, totalRan, expectedEventCount, expectedLocalEventCount, semaphore})
 			}
@@ -375,16 +372,14 @@ func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, semapho
 		time.Sleep(sleepDuration)
 		b.Time("fetch all actualLRPs and schedulingInfos", func() {
 			semaphore <- struct{}{}
-			actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{CellID: cellID})
+			actuals, err := bbsClient.ActualLRPs(logger, models.ActualLRPFilter{CellID: cellID})
 			<-semaphore
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(actuals)).To(Equal(expectedActualLRPCount), "Number of ActualLRPs retrieved in router-emitter on a cell %s", cellID)
 
 			guids := []string{}
 			for _, actual := range actuals {
-				lrp, _, err := actual.Resolve()
-				Expect(err).NotTo(HaveOccurred())
-				guids = append(guids, lrp.ProcessGuid)
+				guids = append(guids, actual.ProcessGuid)
 			}
 
 			semaphore <- struct{}{}
@@ -416,7 +411,7 @@ func globalRouteEmitter(b Benchmarker, wg *sync.WaitGroup, semaphore chan struct
 		time.Sleep(sleepDuration)
 		b.Time("fetch all actualLRPs and schedulingInfos", func() {
 			semaphore <- struct{}{}
-			actuals, err := bbsClient.ActualLRPGroups(logger, models.ActualLRPFilter{})
+			actuals, err := bbsClient.ActualLRPs(logger, models.ActualLRPFilter{})
 			<-semaphore
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(actuals)).To(Equal(expectedLRPCount), "Number of ActualLRPs retrieved in router-emitter")
