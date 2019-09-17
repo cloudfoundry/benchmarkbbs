@@ -35,7 +35,7 @@ import (
 	locketmodels "code.cloudfoundry.org/locket/models"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/service/s3"
+	awssession "github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	_ "github.com/go-sql-driver/mysql"
 	. "github.com/onsi/ginkgo"
@@ -124,12 +124,10 @@ func TestBenchmarkBbs(t *testing.T) {
 	}
 
 	if config.AwsAccessKeyID != "" && config.AwsSecretAccessKey != "" && config.AwsBucketName != "" {
-		creds := credentials.NewStaticCredentials(config.AwsAccessKeyID, config.AwsSecretAccessKey, "")
-		s3Client := s3.New(&aws.Config{
+		uploader := s3manager.NewUploader(awssession.New(&aws.Config{
 			Region:      &config.AwsRegion,
-			Credentials: creds,
-		})
-		uploader := s3manager.NewUploader(&s3manager.UploadOptions{S3: s3Client})
+			Credentials: credentials.NewStaticCredentials(config.AwsAccessKeyID, config.AwsSecretAccessKey, ""),
+		}))
 		reporter := reporter.NewS3Reporter(logger, config.AwsBucketName, uploader)
 		reporters = append(reporters, &reporter)
 	}
