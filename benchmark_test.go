@@ -40,12 +40,8 @@ type lockInfo struct {
 }
 
 var (
-	bulkCycle               = 30 * time.Second
-	eventCount              = int32(0)
-	expectedEventCount      = int32(0)
-	expectedLocalEventCount = make(map[string]*int32)
-	lockInfos               = []lockInfo{}
-	longTermTtl             = int64(864000) // 10 days
+	bulkCycle   = 30 * time.Second
+	longTermTtl = int64(864000) // 10 days
 )
 
 func expectEventToHaveCellID(cellID string, event models.Event) {
@@ -53,6 +49,7 @@ func expectEventToHaveCellID(cellID string, event models.Event) {
 
 	e, ok := event.(*models.ActualLRPChangedEvent)
 	if !ok || cellID == "" {
+		logger.Info("expected-changed-event", lager.Data{"received": event, "cell-id": cellID})
 		return
 	}
 	beforeLRP, _, err := e.Before.Resolve()
@@ -110,10 +107,13 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 		var (
 			routeEmitterProcesses []ifrit.Process
 			process               ifrit.Process
-			err                   error
+			eventCount            int32
+			lockInfos             []lockInfo
 		)
 
 		BeforeEach(func() {
+			eventCount = int32(0)
+			lockInfos = []lockInfo{}
 			process = ifrit.Invoke(ifrit.RunFunc(eventCountRunner("", &eventCount)))
 			<-process.Ready()
 		})
@@ -134,7 +134,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 				).Should(Receive(), "timed out trying to kill lock "+lock.lockPayload.Owner)
 
 				logger.Info("lock-killed", lager.Data{"owner": lock.lockPayload.Owner})
-				_, err = locketClient.Lock(context.Background(), &locketmodels.LockRequest{Resource: lock.lockPayload, TtlInSeconds: longTermTtl})
+				_, err := locketClient.Lock(context.Background(), &locketmodels.LockRequest{Resource: lock.lockPayload, TtlInSeconds: longTermTtl})
 				Expect(err).NotTo(HaveOccurred())
 			}
 		})
@@ -188,6 +188,8 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 
 			totalRan := int32(0)
 			totalQueued := int32(0)
+			expectedEventCount := int32(0)
+			expectedLocalEventCount := make(map[string]*int32)
 
 			for i := 0; i < numReps; i++ {
 				cellID := fmt.Sprintf("cell-%d", i)
@@ -221,7 +223,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 					})
 					Eventually(func() int32 {
 						return atomic.LoadInt32(v)
-					}, 2*time.Minute).Should(BeNumerically("~", expectedEventCount, tolerance), "events received")
+					}, 2*time.Minute).Should(BeNumerically("~", expectedEventCount, tolerance), fmt.Sprintf("events received on cell %s", cellID))
 				}
 			} else {
 				logger.Info("checking-global-event-count", lager.Data{
@@ -291,10 +293,10 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 	defer wg.Done()
 
 	var err error
+	repWg := new(sync.WaitGroup)
 
 	for j := 0; j < numTrials; j++ {
-		sleepDuration := getSleepDuration(j, bulkCycle)
-		time.Sleep(sleepDuration)
+		repWg.Wait()
 
 		b.Time("rep bulk loop", func() {
 			defer GinkgoRecover()
@@ -315,7 +317,8 @@ func repBulker(b Benchmarker, wg *sync.WaitGroup, cellID string, numTrials int, 
 
 			for _, actualLRP := range actuals {
 				atomic.AddInt32(totalQueued, 1)
-				queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, totalRan, expectedEventCount, expectedLocalEventCount, semaphore})
+				repWg.Add(1)
+				queue.Push(&lrpOperation{actualLRP, config.PercentWrites, b, totalRan, expectedEventCount, expectedLocalEventCount, semaphore, repWg})
 			}
 		}, reporter.ReporterInfo{
 			MetricName: RepBulkLoop,
@@ -435,6 +438,7 @@ type lrpOperation struct {
 	globalEventCount *int32
 	localEventCount  *int32
 	semaphore        chan struct{}
+	repWg            *sync.WaitGroup
 }
 
 func (lo *lrpOperation) Key() string {
@@ -444,6 +448,7 @@ func (lo *lrpOperation) Key() string {
 func (lo *lrpOperation) Execute() {
 	defer GinkgoRecover()
 	defer atomic.AddInt32(lo.globalCount, 1)
+	defer lo.repWg.Done()
 	var err error
 	randomNum := rand.Float64() * 100.0
 
@@ -454,6 +459,7 @@ func (lo *lrpOperation) Execute() {
 	lo.b.Time("start actual LRP", func() {
 		netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.ActualLRPNetInfo_PreferredAddressHost, models.NewPortMapping(61999, 8080))
 		lo.semaphore <- struct{}{}
+		logger.Info("sending-start-actual-lrp", lager.Data{"cell_id": actualLRP.CellId, "process_guid": actualLRP.ProcessGuid})
 		err = bbsClient.StartActualLRP(logger, &actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
 		<-lo.semaphore
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to start LRP for process %s, err: %v", actualLRP.ProcessGuid, err))
