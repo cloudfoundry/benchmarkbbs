@@ -43,6 +43,8 @@ import (
 	"github.com/zorkian/go-datadog-api"
 )
 
+const LongTermTTL = int64(864000) // 10 days
+
 var (
 	expectedLRPCount int
 
@@ -297,7 +299,7 @@ func resetLocketDB(locketClient locketmodels.LocketClient, cells map[string]stru
 	}
 
 	for cellId, _ := range cells {
-		_, err := locketClient.Lock(context.Background(), &locketmodels.LockRequest{Resource: lockResource(cellId), TtlInSeconds: longTermTtl})
+		_, err := locketClient.Lock(context.Background(), &locketmodels.LockRequest{Resource: lockResource(cellId), TtlInSeconds: LongTermTTL})
 		Expect(err).NotTo(HaveOccurred())
 	}
 }

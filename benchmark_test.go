@@ -32,17 +32,14 @@ const (
 	RepBulkLoop                       = "RepBulkLoop"
 	RepClaimActualLRP                 = "RepClaimActualLRP"
 	RepStartActualLRP                 = "RepStartActualLRP"
+	EventBufferSize                   = 100000
+	BulkCycle                         = 30 * time.Second
 )
 
 type lockInfo struct {
 	lockPayload *locketmodels.Resource
 	lockProcess ifrit.Process
 }
-
-var (
-	bulkCycle   = 30 * time.Second
-	longTermTtl = int64(864000) // 10 days
-)
 
 func expectEventToHaveCellID(cellID string, event models.Event) {
 	defer GinkgoRecover()
@@ -67,7 +64,7 @@ func eventCountRunner(cellID string, counter *int32) func(signals <-chan os.Sign
 		Expect(err).NotTo(HaveOccurred())
 		close(ready)
 
-		eventChan := make(chan models.Event)
+		eventChan := make(chan models.Event, EventBufferSize)
 		go func() {
 			for {
 				event, err := eventSource.Next()
@@ -126,7 +123,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 
 			for _, lock := range lockInfos {
 				logger.Info("killing-lock", lager.Data{"owner": lock.lockPayload.Owner})
-				ginkgomon.Kill(lock.lockProcess)
+				ginkgomon.Kill(lock.lockProcess, 5*time.Second)
 
 				Eventually(
 					lock.lockProcess.Wait(),
@@ -134,7 +131,7 @@ var BenchmarkTests = func(numReps, numTrials int, localRouteEmitters bool) {
 				).Should(Receive(), "timed out trying to kill lock "+lock.lockPayload.Owner)
 
 				logger.Info("lock-killed", lager.Data{"owner": lock.lockPayload.Owner})
-				_, err := locketClient.Lock(context.Background(), &locketmodels.LockRequest{Resource: lock.lockPayload, TtlInSeconds: longTermTtl})
+				_, err := locketClient.Lock(context.Background(), &locketmodels.LockRequest{Resource: lock.lockPayload, TtlInSeconds: LongTermTTL})
 				Expect(err).NotTo(HaveOccurred())
 			}
 		})
@@ -256,7 +253,7 @@ func ensureCellsRegistered(b Benchmarker, wg *sync.WaitGroup, numTrials, numReps
 	defer wg.Done()
 
 	for i := 0; i < numTrials; i++ {
-		sleepDuration := getSleepDuration(i, bulkCycle)
+		sleepDuration := getSleepDuration(i, BulkCycle)
 		time.Sleep(sleepDuration)
 		b.Time("fetch all the cell presences", func() {
 			defer GinkgoRecover()
@@ -276,7 +273,7 @@ func nsyncBulkerLoop(b Benchmarker, wg *sync.WaitGroup, numTrials int) {
 	defer wg.Done()
 
 	for i := 0; i < numTrials; i++ {
-		sleepDuration := getSleepDuration(i, bulkCycle)
+		sleepDuration := getSleepDuration(i, BulkCycle)
 		time.Sleep(sleepDuration)
 		b.Time("fetch all desired LRP scheduling info", func() {
 			desireds, err := bbsClient.DesiredLRPSchedulingInfos(logger, models.DesiredLRPFilter{})
@@ -371,7 +368,7 @@ func localRouteEmitter(b Benchmarker, wg *sync.WaitGroup, cellID string, semapho
 	Expect(ok).To(BeTrue())
 
 	for j := 0; j < numTrials; j++ {
-		sleepDuration := getSleepDuration(j, bulkCycle)
+		sleepDuration := getSleepDuration(j, BulkCycle)
 		time.Sleep(sleepDuration)
 		b.Time("fetch all actualLRPs and schedulingInfos", func() {
 			semaphore <- struct{}{}
@@ -410,7 +407,7 @@ func globalRouteEmitter(b Benchmarker, wg *sync.WaitGroup, semaphore chan struct
 	}()
 
 	for j := 0; j < numTrials; j++ {
-		sleepDuration := getSleepDuration(j, bulkCycle)
+		sleepDuration := getSleepDuration(j, BulkCycle)
 		time.Sleep(sleepDuration)
 		b.Time("fetch all actualLRPs and schedulingInfos", func() {
 			semaphore <- struct{}{}
