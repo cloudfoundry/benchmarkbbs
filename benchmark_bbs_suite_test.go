@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -70,11 +69,14 @@ const (
 
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	configFile := flag.String("config", "", "config file")
-	flag.Parse()
+
+	configPath, ok := os.LookupEnv("BENCHMARK_BBS_CONFIG_PATH")
+	if !ok {
+		log.Fatal("error reading config file: BENCHMARK_BBS_CONFIG_PATH env var not set")
+	}
 
 	var err error
-	config, err = benchmarkconfig.NewBenchmarkBBSConfig(*configFile)
+	config, err = benchmarkconfig.NewBenchmarkBBSConfig(configPath)
 	if err != nil {
 		panic(err)
 	}
