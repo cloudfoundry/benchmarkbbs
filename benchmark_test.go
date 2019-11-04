@@ -44,23 +44,18 @@ type lockInfo struct {
 func expectEventToHaveCellID(cellID string, event models.Event) {
 	defer GinkgoRecover()
 
-	e, ok := event.(*models.ActualLRPChangedEvent)
+	e, ok := event.(*models.ActualLRPInstanceChangedEvent)
 	if !ok || cellID == "" {
 		logger.Info("expected-changed-event", lager.Data{"received": event, "cell-id": cellID})
 		return
 	}
-	beforeLRP, _, err := e.Before.Resolve()
-	Expect(err).NotTo(HaveOccurred())
-	Expect(beforeLRP.CellId).To(Equal(cellID))
-	afterLRP, _, err := e.After.Resolve()
-	Expect(err).NotTo(HaveOccurred())
-	Expect(afterLRP.CellId).To(Equal(cellID))
-	logger.Info("received-event", lager.Data{"cell_id": cellID, "process_guid": beforeLRP.ProcessGuid, "before_state": beforeLRP.State, "after_state": afterLRP.State})
+	Expect(e.CellId).To(Equal(cellID))
+	logger.Info("received-event", lager.Data{"cell_id": e.CellId, "process_guid": e.ProcessGuid, "before_state": e.Before.State, "after_state": e.After.State})
 }
 
 func eventCountRunner(cellID string, counter *int32) func(signals <-chan os.Signal, ready chan<- struct{}) error {
 	return func(signals <-chan os.Signal, ready chan<- struct{}) error {
-		eventSource, err := bbsClient.SubscribeToEventsByCellID(logger, cellID)
+		eventSource, err := bbsClient.SubscribeToInstanceEventsByCellID(logger, cellID)
 		Expect(err).NotTo(HaveOccurred())
 		close(ready)
 
