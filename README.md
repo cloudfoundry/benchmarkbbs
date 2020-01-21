@@ -1,5 +1,9 @@
 ## BBS Benchmark
 
+## Reporting issues and requesting features
+
+Please report all issues and feature requests in [cloudfoundry/diego-release](https://github.com/cloudfoundry/diego-release/issues).
+
 **Note**: This repo is meant to be used inside a GOPATH that points to a locally cloned [diego-release](https://github.com/cloudfoundry/diego-release). Alternatively you can use the [generate-benchmarks-manifest script](https://github.com/cloudfoundry/diego-release/blob/develop/scripts/generate-benchmarks-manifest) from `diego-release` to generate a benchmark deployment manifest. Then, follow these instructions to deploy the benchmark errand and run it:
 
 ```
