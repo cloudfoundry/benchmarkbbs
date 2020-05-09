@@ -153,7 +153,7 @@ func initializeActiveDB() *sql.DB {
 		config.DatabaseConnectionString = fmt.Sprintf("%s?sslmode=disable", config.DatabaseConnectionString)
 	}
 
-	sqlConn, err := sql.Open(config.DatabaseDriver, config.DatabaseConnectionString)
+	sqlConn, err := helpers.Connect(logger, config.DatabaseDriver, config.DatabaseConnectionString, "", false)
 	if err != nil {
 		logger.Fatal("failed-to-open-sql", err)
 	}
