@@ -82,7 +82,7 @@ func (g *DesiredLRPGenerator) Generate(logger lager.Logger, numReps, count int) 
 			actualLRPInstanceKey := &models.ActualLRPInstanceKey{InstanceGuid: desired.ProcessGuid + "-i", CellId: cellID}
 			netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.ActualLRPNetInfo_PreferredAddressHost, models.NewPortMapping(61999, 8080))
 			actualStartResultCh <- newStampedError(
-				g.bbsClient.StartActualLRP(logger, &models.ActualLRPKey{Domain: desired.Domain, ProcessGuid: desired.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo),
+				g.bbsClient.StartActualLRP(logger, &models.ActualLRPKey{Domain: desired.Domain, ProcessGuid: desired.ProcessGuid, Index: 0}, actualLRPInstanceKey, &netInfo, []*models.ActualLRPInternalRoute{}),
 				id,
 				cellID,
 			)
