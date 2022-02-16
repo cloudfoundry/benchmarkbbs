@@ -452,7 +452,7 @@ func (lo *lrpOperation) Execute() {
 		netInfo := models.NewActualLRPNetInfo("1.2.3.4", "2.2.2.2", models.ActualLRPNetInfo_PreferredAddressHost, models.NewPortMapping(61999, 8080))
 		lo.semaphore <- struct{}{}
 		logger.Info("sending-start-actual-lrp", lager.Data{"cell_id": actualLRP.CellId, "process_guid": actualLRP.ProcessGuid})
-		err = bbsClient.StartActualLRP(logger, &actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo)
+		err = bbsClient.StartActualLRP(logger, &actualLRP.ActualLRPKey, &actualLRP.ActualLRPInstanceKey, &netInfo, []*models.ActualLRPInternalRoute{})
 		<-lo.semaphore
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to start LRP for process %s, err: %v", actualLRP.ProcessGuid, err))
 
